@@ -146,6 +146,8 @@ static cl_error_t onas_scan_thread_scanfile(struct onas_scan_event *event_data, 
 #if defined(HAVE_SYS_FANOTIFY_H)
     struct fanotify_response res;
     uint8_t b_fanotify;
+#elif defined(HAVE_MACOS_ESF)
+    uint8_t b_esf;
 #endif
 
     int ret = 0;
@@ -160,6 +162,10 @@ static cl_error_t onas_scan_thread_scanfile(struct onas_scan_event *event_data, 
 
     b_scan          = event_data->bool_opts & ONAS_SCTH_B_SCAN ? 1 : 0;
     b_deny_on_error = event_data->bool_opts & ONAS_SCTH_B_DENY_ON_E ? 1 : 0;
+
+#if defined(HAVE_MACOS_ESF)
+    b_esf = event_data->bool_opts & ONAS_SCTH_B_ESF ? 1 : 0;
+#endif
 
 #if defined(HAVE_SYS_FANOTIFY_H)
     b_fanotify = event_data->bool_opts & ONAS_SCTH_B_FANOTIFY ? 1 : 0;
@@ -184,6 +190,21 @@ static cl_error_t onas_scan_thread_scanfile(struct onas_scan_event *event_data, 
         }
 #endif
     }
+
+#if defined(HAVE_MACOS_ESF)
+    if (b_scan && b_esf && event_data->es_msg) {
+        es_auth_result_t result = ES_AUTH_RESULT_ALLOW;
+        bool cache = true;
+
+        if ((*err && b_deny_on_error) || *infected) {
+             result = ES_AUTH_RESULT_DENY;
+             cache = false;
+        }
+
+        es_respond_auth_result(g_client, (const es_message_t *)event_data->es_msg, result, cache);
+        es_release_message((const es_message_t *)event_data->es_msg);
+    }
+#endif
 
 #if defined(HAVE_SYS_FANOTIFY_H)
     if (b_fanotify) {
@@ -319,7 +340,6 @@ void *onas_scan_worker(void *arg)
     uint8_t b_dir;
     uint8_t b_file;
     uint8_t b_inotify;
-    uint8_t b_inotify;
     uint8_t b_fanotify;
 #if defined(HAVE_MACOS_ESF)
     uint8_t b_esf;
@@ -372,29 +392,8 @@ void *onas_scan_worker(void *arg)
     }
 #elif defined(HAVE_MACOS_ESF)
     if (b_esf) {
-        es_auth_result_t result = ES_AUTH_RESULT_ALLOW;
-        bool cache = true;
-
         logg(LOGG_DEBUG, "ClamWorker: performing scanning on file '%s' (ESF)\n", event_data->pathname);
         onas_scan_thread_handle_file(event_data, event_data->pathname);
-        
-        /* Check verdict */
-        if ((*err && *ret_code != CL_SUCCESS) || *infected) {
-             /* 
-              * If configured to deny on error, or if infected, deny access.
-              * We use the 'b_deny_on_error' flag set in generic logic.
-              */
-             if ((*err && b_deny_on_error) || *infected) {
-                 result = ES_AUTH_RESULT_DENY;
-                 cache = false; // Don't cache denials usually
-             }
-        }
-        
-        if (event_data->es_msg) {
-            es_respond_auth_result(g_client, (const es_message_t *)event_data->es_msg, result, cache);
-            /* Release the message we retained in the handler */
-            es_release_message((const es_message_t *)event_data->es_msg);
-        }
     }
 #endif
 done:

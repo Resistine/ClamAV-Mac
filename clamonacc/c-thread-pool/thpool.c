@@ -471,14 +471,22 @@ static struct job* jobqueue_pull(jobqueue* jobqueue_p){
 		  			break;
 
 		case 1:  /* if one job in queue */
+#if defined(__linux__)
 					logg(LOGG_DEBUG_NV, "jobqueue_pull: Thread %ld pulled last job from queue.\n", syscall(SYS_gettid));
+#else
+					logg(LOGG_DEBUG_NV, "jobqueue_pull: Thread %p pulled last job from queue.\n", (void *)pthread_self());
+#endif
 					jobqueue_p->front = NULL;
 					jobqueue_p->rear  = NULL;
 					jobqueue_p->len = 0;
 					break;
 
 		default: /* if >1 jobs in queue */
+#if defined(__linux__)
 					logg(LOGG_DEBUG_NV, "jobqueue_pull: Thread %ld pulled a job from queue.\n", syscall(SYS_gettid));
+#else
+					logg(LOGG_DEBUG_NV, "jobqueue_pull: Thread %p pulled a job from queue.\n", (void *)pthread_self());
+#endif
 					jobqueue_p->front = job_p->prev;
 					jobqueue_p->len--;
 					/* more than one job in queue -> post it */

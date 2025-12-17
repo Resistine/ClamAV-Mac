@@ -1,4 +1,4 @@
-# ClamAV
+# ClamAV for MacOS with an On-Access Scanner based on Apple's Endpoint Security Framework (ESF)
 
 <p align="center">
   <img width="250" height="250" src="https://raw.githubusercontent.com/Cisco-Talos/clamav/main/logo.png" alt='Maeve, the ClamAV mascot'>
@@ -29,10 +29,10 @@ You can contribute to the documentation by submitting improvements to
 For information about the features in this and prior releases, read
 [the news](NEWS.md).
 
-**New in 2025:** ClamAV now supports On-Access Scanning on macOS using the Apple Endpoint Security Framework (ESF). See `INSTALL-macos.md` for build and code-signing instructions.
+**New in 2025:** ClamAV now supports On-Access Scanning on macOS using the Apple Endpoint Security Framework (ESF). See [INSTALL-macos.md](INSTALL-macos.md) for build and code-signing instructions.
 
 Catch up on the latest about ClamAV by reading our
-[blog](http://blog.clamav.net) and follow us on Twitter `@clamav`.
+[blog(http://blog.clamav.net) and follow us on Twitter `@clamav`.
 
 ## ClamAV Signatures
 
@@ -47,7 +47,7 @@ ClamAV can be run using Docker. For details, visit to the online manual under
 ["Docker"](https://docs.clamav.net/manual/Installing/Docker.html) and check out
 our images on [Docker Hub](https://hub.docker.com/r/clamav/clamav).
 
-### Using a Package Manager
+###] Using a Package Manager
 
 For help installing from a package manager, refer to the online manual under
 ["Packages"](https://docs.clamav.net/manual/Installing/Packages.html).

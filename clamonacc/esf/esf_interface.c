@@ -35,6 +35,15 @@
 // common
 #include "output.h"
 
+#include <mach/mach.h>
+#include <mach/message.h>
+#include <mach/task_info.h>
+#include <mach/kern_return.h>
+
+// clamonacc
+#include "clamonacc.h"
+#include "esf_interface.h"
+
 // Queue headers
 #include "scan/onas_queue.h"
 #include "scan/thread.h"
@@ -82,9 +91,17 @@ static void onas_esf_handler(es_client_t *client, const es_message_t *message)
     
     // Copy the path for logging/logic convenience
     if (message->event.open.file->path.data && message->event.open.file->path.length > 0) {
-        event_data->pathname = cli_safer_strdup(message->event.open.file->path.data);
+        event_data->pathname = strdup(message->event.open.file->path.data);
     } else {
-         event_data->pathname = cli_safer_strdup("unknown definition");
+         event_data->pathname = strdup("unknown definition");
+    }
+
+    if (!event_data->pathname) {
+        logg(LOGG_ERROR, "ClamESF: OOM duplicating path\n");
+        es_release_message(message);
+        free(event_data);
+        es_respond_auth_result(client, message, ES_AUTH_RESULT_ALLOW, false);
+        return;
     }
 
     /* Queue the event */
@@ -133,8 +150,15 @@ cl_error_t onas_setup_esf(struct onas_context **ctx)
     }
     
     // Mute ClamAV's own process to avoid scanning files we open
-    if (es_mute_process(g_client, getpid()) != ES_RETURN_SUCCESS) {
-         logg(LOGG_WARNING, "ClamESF: Failed to mute own process. Recursive scanning loops possible!\n");
+    mach_msg_type_number_t count = TASK_AUDIT_TOKEN_COUNT;
+    audit_token_t token;
+    kern_return_t kr = task_info(mach_task_self(), TASK_AUDIT_TOKEN, (task_info_t)&token, &count);
+    if (kr == KERN_SUCCESS) {
+        if (es_mute_process(g_client, &token) != ES_RETURN_SUCCESS) {
+             logg(LOGG_WARNING, "ClamESF: Failed to mute own process. Recursive scanning loops possible!\n");
+        }
+    } else {
+        logg(LOGG_WARNING, "ClamESF: Failed to get own audit token. Cannot mute self.\n");
     }
 
     logg(LOGG_INFO, "ClamESF: Client created and subscribed successfully.\n");
@@ -144,6 +168,7 @@ cl_error_t onas_setup_esf(struct onas_context **ctx)
 
 int onas_esf_eloop(struct onas_context **ctx)
 {
+    (void)ctx;
     logg(LOGG_INFO, "ClamESF: Starting ESF generic loop...\n");
     
     /* 

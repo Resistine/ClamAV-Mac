@@ -245,11 +245,6 @@ int main(int argc, char **argv)
                 break;
         }
     }
-#else
-    mprintf(LOGG_ERROR, "Clamonacc: currently, this application only runs on linux systems with fanotify enabled\n");
-    goto done;
-#endif
-
 #elif defined(HAVE_MACOS_ESF)
     /* Setup Endpoint Security Framework */
     switch (onas_setup_esf(&ctx)) {
@@ -266,6 +261,9 @@ int main(int argc, char **argv)
             goto done;
             break;
     }
+#else
+    mprintf(LOGG_ERROR, "Clamonacc: currently, this application only runs on linux systems with fanotify enabled\n");
+    goto done;
 #endif
 
     /* Setup signal handling */

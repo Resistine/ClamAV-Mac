@@ -1111,7 +1111,7 @@ if(NOT ENABLE_LIBCLAMAV_ONLY)
 
         add_subdirectory( clamdscan )
 
-        if(C_LINUX AND ENABLE_CLAMONACC)
+        if((C_LINUX OR APPLE) AND ENABLE_CLAMONACC)
             add_subdirectory( clamonacc )
         endif()
 

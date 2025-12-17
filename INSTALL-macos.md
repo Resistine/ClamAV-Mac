@@ -6,7 +6,7 @@ ClamAV 0.106+ includes experimental support for On-Access Scanning on macOS usin
 
 1.  **macOS 10.15 (Catalina) or newer**.
 2.  **Xcode Command Line Tools**: `xcode-select --install`
-3.  **CMake**: `brew install cmake`
+3.  **CMake**: `brew install git cmake rust json-d check`
 4.  **Apple Developer Account**: Required for code-signing the application to run with Endpoint Security entitlements.
 
 ## Building from Source
