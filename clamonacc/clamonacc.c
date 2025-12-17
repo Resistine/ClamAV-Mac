@@ -58,6 +58,10 @@
 #include "inotif/inotif.h"
 #include "scan/onas_queue.h"
 
+#if defined(HAVE_MACOS_ESF)
+#include "esf/esf_interface.h"
+#endif
+
 pthread_t ddd_pid        = 0;
 pthread_t scan_queue_pid = 0;
 
@@ -246,6 +250,24 @@ int main(int argc, char **argv)
     goto done;
 #endif
 
+#elif defined(HAVE_MACOS_ESF)
+    /* Setup Endpoint Security Framework */
+    switch (onas_setup_esf(&ctx)) {
+        case CL_SUCCESS:
+            break;
+        case CL_BREAK:
+            ret = 0;
+            goto done;
+            break;
+        case CL_EARG:
+        default:
+            mprintf(LOGG_ERROR, "Clamonacc: can't setup Endpoint Security Framework\n");
+            ret = 2;
+            goto done;
+            break;
+    }
+#endif
+
     /* Setup signal handling */
     g_ctx = ctx;
     onas_handle_signals();
@@ -325,6 +347,8 @@ int onas_start_eloop(struct onas_context **ctx)
 
 #if defined(HAVE_SYS_FANOTIFY_H)
     ret = onas_fan_eloop(ctx);
+#elif defined(HAVE_MACOS_ESF)
+    ret = onas_esf_eloop(ctx);
 #endif
 
     return ret;

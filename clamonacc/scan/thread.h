@@ -39,6 +39,9 @@
 #define ONAS_SCTH_B_RETRY_ON_E 0x20
 #define ONAS_SCTH_B_DENY_ON_E 0x40
 #define ONAS_SCTH_B_REMOTE 0x80
+#ifdef HAVE_MACOS_ESF
+#define ONAS_SCTH_B_ESF 0x100
+#endif
 
 #ifndef HAVE_ATTRIB_PACKED
 #define __attribute__(x)
@@ -57,6 +60,8 @@ struct onas_scan_event {
     int fan_fd;
 #if defined(HAVE_SYS_FANOTIFY_H)
     struct fanotify_event_metadata *fmd;
+#elif defined(HAVE_MACOS_ESF)
+    void *es_msg;
 #endif
     uint8_t retry_attempts;
     uint64_t sizelimit;

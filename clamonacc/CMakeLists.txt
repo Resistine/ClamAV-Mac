@@ -28,7 +28,19 @@ target_sources( clamonacc
         scan/onas_queue.c
         scan/onas_queue.h
         scan/thread.c
+        scan/thread.c
         scan/thread.h )
+
+if(APPLE)
+    target_sources( clamonacc
+        PRIVATE
+            esf/esf_interface.c
+            esf/esf_interface.h )
+    
+    find_library(ENDPOINT_SECURITY_LIB EndpointSecurity)
+    target_link_libraries( clamonacc PRIVATE ${ENDPOINT_SECURITY_LIB} )
+    target_compile_definitions( clamonacc PRIVATE HAVE_MACOS_ESF )
+endif()
 
 if(NOT HAVE_SYSTEM_LFS_FTS)
     target_sources( clamonacc

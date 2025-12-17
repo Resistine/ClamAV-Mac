@@ -34,6 +34,11 @@
 #include <sys/fanotify.h>
 #endif
 
+#if defined(HAVE_MACOS_ESF)
+#include <EndpointSecurity/EndpointSecurity.h>
+extern es_client_t *g_client; // Need access to the global client for responding
+#endif
+
 // libclamav
 #include "others.h"
 
@@ -314,7 +319,11 @@ void *onas_scan_worker(void *arg)
     uint8_t b_dir;
     uint8_t b_file;
     uint8_t b_inotify;
+    uint8_t b_inotify;
     uint8_t b_fanotify;
+#if defined(HAVE_MACOS_ESF)
+    uint8_t b_esf;
+#endif
 
     if (NULL == event_data || NULL == event_data->pathname) {
         logg(LOGG_INFO, "ClamWorker: invalid worker arguments for scanning thread\n");
@@ -328,7 +337,11 @@ void *onas_scan_worker(void *arg)
     b_dir      = event_data->bool_opts & ONAS_SCTH_B_DIR ? 1 : 0;
     b_file     = event_data->bool_opts & ONAS_SCTH_B_FILE ? 1 : 0;
     b_inotify  = event_data->bool_opts & ONAS_SCTH_B_INOTIFY ? 1 : 0;
+    b_inotify  = event_data->bool_opts & ONAS_SCTH_B_INOTIFY ? 1 : 0;
     b_fanotify = event_data->bool_opts & ONAS_SCTH_B_FANOTIFY ? 1 : 0;
+#if defined(HAVE_MACOS_ESF)
+    b_esf = event_data->bool_opts & ONAS_SCTH_B_ESF ? 1 : 0;
+#endif
 
 #if defined(HAVE_SYS_FANOTIFY_H)
     if (b_inotify) {
@@ -355,6 +368,32 @@ void *onas_scan_worker(void *arg)
                 close(event_data->fmd->fd);
                 goto done;
             }
+        }
+    }
+#elif defined(HAVE_MACOS_ESF)
+    if (b_esf) {
+        es_auth_result_t result = ES_AUTH_RESULT_ALLOW;
+        bool cache = true;
+
+        logg(LOGG_DEBUG, "ClamWorker: performing scanning on file '%s' (ESF)\n", event_data->pathname);
+        onas_scan_thread_handle_file(event_data, event_data->pathname);
+        
+        /* Check verdict */
+        if ((*err && *ret_code != CL_SUCCESS) || *infected) {
+             /* 
+              * If configured to deny on error, or if infected, deny access.
+              * We use the 'b_deny_on_error' flag set in generic logic.
+              */
+             if ((*err && b_deny_on_error) || *infected) {
+                 result = ES_AUTH_RESULT_DENY;
+                 cache = false; // Don't cache denials usually
+             }
+        }
+        
+        if (event_data->es_msg) {
+            es_respond_auth_result(g_client, (const es_message_t *)event_data->es_msg, result, cache);
+            /* Release the message we retained in the handler */
+            es_release_message((const es_message_t *)event_data->es_msg);
         }
     }
 #endif

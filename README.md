@@ -29,6 +29,8 @@ You can contribute to the documentation by submitting improvements to
 For information about the features in this and prior releases, read
 [the news](NEWS.md).
 
+**New in 2025:** ClamAV now supports On-Access Scanning on macOS using the Apple Endpoint Security Framework (ESF). See `INSTALL-macos.md` for build and code-signing instructions.
+
 Catch up on the latest about ClamAV by reading our
 [blog](http://blog.clamav.net) and follow us on Twitter `@clamav`.
 
