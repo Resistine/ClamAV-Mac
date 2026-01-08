@@ -193,15 +193,18 @@ static cl_error_t onas_scan_thread_scanfile(struct onas_scan_event *event_data, 
 
 #if defined(HAVE_MACOS_ESF)
     if (b_scan && b_esf && event_data->es_msg) {
-        es_auth_result_t result = ES_AUTH_RESULT_ALLOW;
-        bool cache = true;
-
-        if ((*err && b_deny_on_error) || *infected) {
-             result = ES_AUTH_RESULT_DENY;
-             cache = false;
+        // NOTE: We already responded to the AUTH event immediately in the handler
+        // to avoid ESF timeout. We can't respond twice, so we just log the result
+        // and release the message.
+        if (*infected) {
+            logg(LOGG_WARNING, "ClamESF: Malware detected in %s (already allowed by ESF)\n", 
+                 event_data->pathname ? event_data->pathname : "unknown");
+            // TODO: Take remediation action (quarantine, alert, etc.)
+        } else if (*err && b_deny_on_error) {
+            logg(LOGG_WARNING, "ClamESF: Scan error for %s (already allowed by ESF)\n",
+                 event_data->pathname ? event_data->pathname : "unknown");
         }
-
-        es_respond_auth_result(g_client, (const es_message_t *)event_data->es_msg, result, cache);
+        
         es_release_message((const es_message_t *)event_data->es_msg);
     }
 #endif

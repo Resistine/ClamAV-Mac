@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <stdint.h>
 #include <EndpointSecurity/EndpointSecurity.h>
 
 // libclamav
@@ -39,6 +40,8 @@
 #include <mach/message.h>
 #include <mach/task_info.h>
 #include <mach/kern_return.h>
+#include <CoreFoundation/CoreFoundation.h>
+#include <dispatch/dispatch.h>
 
 // clamonacc
 #include "clamonacc.h"
@@ -51,68 +54,118 @@
 
 static struct onas_context *g_esf_ctx = NULL;
 es_client_t *g_client = NULL;
+static dispatch_queue_t g_esf_workq = NULL;
+
+struct esf_open_work_item {
+    char *pathname;
+};
+
+static void onas_esf_work_item_free(struct esf_open_work_item *wi)
+{
+    if (!wi) {
+        return;
+    }
+    free(wi->pathname);
+    free(wi);
+}
 
 static void onas_esf_handler(es_client_t *client, const es_message_t *message)
 {
-    struct onas_scan_event *event_data = NULL;
-    
-    // We only care about AUTH_OPEN events for now
-    if (message->event_type != ES_EVENT_TYPE_AUTH_OPEN) {
-        es_respond_auth_result(client, message, ES_AUTH_RESULT_ALLOW, false);
+    struct esf_open_work_item *wi = NULL;
+
+    // Check if this is an AUTH event that requires a response
+    // AUTH events have action_type == ES_ACTION_TYPE_AUTH
+    if (message->action_type == ES_ACTION_TYPE_AUTH) {
+        // This is an AUTH event - we must respond
+        if (message->event_type == ES_EVENT_TYPE_AUTH_OPEN) {
+            /*
+             * CRITICAL: AUTH events have a strict deadline. We must respond immediately
+             * to avoid ESF killing our client.
+             *
+             * We currently run scans asynchronously, so we ALLOW the open and then enqueue
+             * the file path for scanning. If malware is detected, we can alert/quarantine
+             * but cannot retroactively block this open.
+             */
+            // AUTH_OPEN must use es_respond_flags_result (see ESTypes.h).
+            // Use UINT32_MAX to allow regardless of requested flags.
+            (void)es_respond_flags_result(client, message, UINT32_MAX, true);
+        } else {
+            // Other AUTH event types - respond immediately with ALLOW
+            es_respond_auth_result(client, message, ES_AUTH_RESULT_ALLOW, true);
+            return;
+        }
+    } else {
+        // NOTIFY events don't require responses - just ignore (and do not log here; logging can block).
         return;
     }
+    
+    // Only AUTH_OPEN events reach here
+
+    /*
+     * IMPORTANT: Keep this callback as close to constant-time as possible.
+     * Even if we respond immediately for the current message, doing extra work here can
+     * backlog subsequent AUTH messages in this callback queue and cause deadline misses.
+     *
+     * So we only copy the path and dispatch the rest of the work asynchronously.
+     */
+    if (!g_esf_workq) {
+        // Should not happen, but fail open by doing nothing else.
+        return;
+    }
+
+    wi = calloc(1, sizeof(*wi));
+    if (!wi) {
+        return;
+    }
+
+    if (message->event.open.file->path.data && message->event.open.file->path.length > 0) {
+        // es_string_token_t is not guaranteed to be NUL-terminated.
+        wi->pathname = strndup(message->event.open.file->path.data, message->event.open.file->path.length);
+    } else {
+        wi->pathname = strdup("unknown definition");
+    }
+
+    if (!wi->pathname) {
+        onas_esf_work_item_free(wi);
+        return;
+    }
+
+    dispatch_async(g_esf_workq, ^{
+        struct onas_scan_event *event_data = NULL;
+
+        event_data = calloc(1, sizeof(struct onas_scan_event));
+        if (NULL == event_data) {
+            onas_esf_work_item_free(wi);
+            return;
+        }
+
+        /* Map context info to event data */
+        if (CL_SUCCESS != onas_map_context_info_to_event_data(g_esf_ctx, &event_data)) {
+            free(event_data);
+            onas_esf_work_item_free(wi);
+            return;
+        }
+
+        event_data->bool_opts |= ONAS_SCTH_B_ESF;
+        event_data->es_msg = NULL;
+        event_data->pathname = wi->pathname;
+        wi->pathname = NULL;
+
+        /* Queue the event for async scanning */
+        if (CL_SUCCESS != onas_queue_event(event_data)) {
+            free(event_data->pathname);
+            free(event_data);
+            onas_esf_work_item_free(wi);
+            return;
+        }
+
+        onas_esf_work_item_free(wi);
+    });
 
     /* 
      * TODO: Check for exclusions here (e.g. don't scan our own files).
      * For now, we rely on ESF mute_process which should be done in setup.
      */
-
-    event_data = calloc(1, sizeof(struct onas_scan_event));
-    if (NULL == event_data) {
-        logg(LOGG_ERROR, "ClamESF: could not allocate memory for event data struct\n");
-        // Fail open if we can't allocate
-        es_respond_auth_result(client, message, ES_AUTH_RESULT_ALLOW, false);
-        return;
-    }
-
-    /* Map context info to event data */
-    if (CL_SUCCESS != onas_map_context_info_to_event_data(g_esf_ctx, &event_data)) {
-        logg(LOGG_ERROR, "ClamESF: failed to map context info\n");
-        es_respond_auth_result(client, message, ES_AUTH_RESULT_ALLOW, false);
-        free(event_data);
-        return;
-    }
-
-    event_data->bool_opts |= ONAS_SCTH_B_ESF;
-    
-    // We must retain the message because we are processing it asynchronously
-    es_retain_message(message);
-    event_data->es_msg = (void *)message;
-    
-    // Copy the path for logging/logic convenience
-    if (message->event.open.file->path.data && message->event.open.file->path.length > 0) {
-        event_data->pathname = strdup(message->event.open.file->path.data);
-    } else {
-         event_data->pathname = strdup("unknown definition");
-    }
-
-    if (!event_data->pathname) {
-        logg(LOGG_ERROR, "ClamESF: OOM duplicating path\n");
-        es_release_message(message);
-        free(event_data);
-        es_respond_auth_result(client, message, ES_AUTH_RESULT_ALLOW, false);
-        return;
-    }
-
-    /* Queue the event */
-    if (CL_SUCCESS != onas_queue_event(event_data)) {
-        logg(LOGG_ERROR, "ClamESF: failed to queue event\n");
-        es_release_message(message);
-        free(event_data->pathname);
-        free(event_data);
-        es_respond_auth_result(client, message, ES_AUTH_RESULT_ALLOW, false);
-        return;
-    }
 }
 
 cl_error_t onas_setup_esf(struct onas_context **ctx)
@@ -125,6 +178,13 @@ cl_error_t onas_setup_esf(struct onas_context **ctx)
     }
 
     g_esf_ctx = *ctx;
+    if (!g_esf_workq) {
+        g_esf_workq = dispatch_queue_create("org.clamav.clamonacc.esf.work", DISPATCH_QUEUE_SERIAL);
+    }
+    if (!g_esf_workq) {
+        logg(LOGG_ERROR, "ClamESF: Failed to create work queue.\n");
+        return CL_EARG;
+    }
 
     logg(LOGG_INFO, "ClamESF: Initializing Endpoint Security Framework client...\n");
 
@@ -173,14 +233,12 @@ int onas_esf_eloop(struct onas_context **ctx)
     
     /* 
      * ESF callbacks run on a dispatch queue managed by the framework.
-     * We just need to keep the main thread alive. 
-     * In the future we might want to use a cond var or signal to exit cleanly.
+     * Use dispatch_main() to service libdispatch queues reliably.
      */
-    while (1) {
-        sleep(10);
-    }
+    logg(LOGG_INFO, "ClamESF: Running dispatch_main() to service ESF callbacks...\n");
+    dispatch_main();
     
-    /* Cleanup (unreachable in this loop but good practice) */
+    /* Cleanup (unreachable unless run loop stops) */
     if (g_client) {
         es_unsubscribe_all(g_client);
         es_delete_client(g_client);

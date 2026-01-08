@@ -38,8 +38,20 @@ if(APPLE)
             esf/esf_interface.h )
     
     find_library(ENDPOINT_SECURITY_LIB EndpointSecurity)
-    target_link_libraries( clamonacc PRIVATE ${ENDPOINT_SECURITY_LIB} )
+    find_library(COREFOUNDATION_LIB CoreFoundation REQUIRED)
+    target_link_libraries( clamonacc PRIVATE ${ENDPOINT_SECURITY_LIB} ${COREFOUNDATION_LIB} )
     target_compile_definitions( clamonacc PRIVATE HAVE_MACOS_ESF )
+
+    # IMPORTANT (macOS):
+    # If clamonacc is copied by hand out of the build tree (instead of installed via CMake),
+    # it must not retain build-directory RPATHs like .../build/libclamav, or dyld will load
+    # unsigned build artifacts and AMFI will reject them ("different Team IDs").
+    #
+    # Use an install-style rpath that resolves to /usr/local/clamav/lib when clamonacc lives in sbin/.
+    set_target_properties(clamonacc PROPERTIES
+        BUILD_WITH_INSTALL_RPATH TRUE
+        INSTALL_RPATH "@executable_path/../lib"
+    )
 endif()
 
 if(NOT HAVE_SYSTEM_LFS_FTS)
