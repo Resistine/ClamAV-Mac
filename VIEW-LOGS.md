@@ -9,7 +9,7 @@ ClamAV **doesn't log to syslog by default**. That's why `log stream` shows nothi
 Run this script to enable logging:
 
 ```bash
-./enable-logging.sh
+./scripts/enable-logging.sh
 ```
 
 Then restart `clamd`:
@@ -43,14 +43,14 @@ Then restart `clamd`.
 ### Test with EICAR (triggers a scan)
 
 ```bash
-# Create test file
-echo 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > /tmp/eicar.txt
+# Create test file (zsh-safe)
+printf 'X5O!P%%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*\\n' > /tmp/eicar.txt
 
 # Open it (triggers on-access scan)
 cat /tmp/eicar.txt
 
 # Check if it was detected
-clamdscan /tmp/eicar.txt
+/usr/local/clamav/bin/clamdscan /tmp/eicar.txt
 ```
 
 ### Check Process Activity

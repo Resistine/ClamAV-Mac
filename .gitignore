@@ -99,6 +99,16 @@ tags
 install/*
 build/*
 
+# Local / macOS on-device packaging artifacts (never commit)
+local-secrets/
+legacy/
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile
+*.provisionprofile.*
+*.provisioningprofile
+
 # User-specific files
 *.rsuser
 *.suo

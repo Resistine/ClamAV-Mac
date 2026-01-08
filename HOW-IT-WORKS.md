@@ -63,8 +63,8 @@ pgrep -fl clamonacc
 EICAR is a harmless test file that all antivirus software recognizes as "malware" for testing:
 
 ```bash
-# Create EICAR test file
-echo 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > /tmp/eicar-test.txt
+# Create EICAR test file (zsh-safe)
+printf 'X5O!P%%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*\\n' > /tmp/eicar-test.txt
 
 # Open it (this should trigger a scan)
 cat /tmp/eicar-test.txt
@@ -91,10 +91,10 @@ You can also manually scan a file to verify `clamd` is working:
 
 ```bash
 # Scan a file manually
-clamdscan /tmp/eicar-test.txt
+/usr/local/clamav/bin/clamdscan /tmp/eicar-test.txt
 
 # Or use clamscan (standalone, doesn't need clamd)
-clamscan /tmp/eicar-test.txt
+/usr/local/clamav/bin/clamscan /tmp/eicar-test.txt
 ```
 
 ### 5. Monitor File Access Events

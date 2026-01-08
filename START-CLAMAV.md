@@ -6,7 +6,7 @@ Use the automated script that builds, installs, signs, and starts everything:
 
 ```bash
 cd /Users/dlesher/Desktop/Resistine/Resistine-ClamAV-Mac/ClamAV-Mac
-./build-and-start.sh
+./scripts/build-and-start.sh
 ```
 
 This script will:
@@ -98,4 +98,8 @@ sudo pkill -x clamd
 ### Multiple `clamonacc` instances
 - Stop all: `sudo pkill -x clamonacc`
 - Start one: `sudo /usr/local/clamav/sbin/clamonacc -F --config-file=/usr/local/clamav/etc/clamd.conf`
+
+### No events / permission errors (macOS)
+- `clamonacc` typically needs **Full Disk Access** (and sometimes the app launching it, e.g. Terminal/Cursor).
+- After granting permissions, restart `clamonacc`.
 
