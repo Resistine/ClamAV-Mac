@@ -98,7 +98,9 @@ static int onas_scan(struct onas_scan_event *event_data, const char *fname, STAT
 
                 i++;
                 if (*err && i == event_data->retry_attempts) {
-                    *err = 0;
+                    logg(LOGG_ERROR, "ClamMisc: scan retries exhausted for %s after %d attempts (ret_code=%d)\n",
+                         fname, i, *ret_code);
+                    break;
                 }
             }
         }
@@ -192,17 +194,37 @@ static cl_error_t onas_scan_thread_scanfile(struct onas_scan_event *event_data, 
     }
 
 #if defined(HAVE_MACOS_ESF)
-    if (b_scan && b_esf && event_data->es_msg) {
-        es_auth_result_t result = ES_AUTH_RESULT_ALLOW;
-        bool cache = true;
-
-        if ((*err && b_deny_on_error) || *infected) {
-             result = ES_AUTH_RESULT_DENY;
-             cache = false;
+    if (b_scan && b_esf) {
+        if (*infected) {
+            logg(LOGG_WARNING, "ClamESF: MALWARE DETECTED in %s\n",
+                 event_data->pathname ? event_data->pathname : "unknown");
+        } else if (*err) {
+            logg(LOGG_WARNING, "ClamESF: Scan error for %s (ret_code=%d)\n",
+                 event_data->pathname ? event_data->pathname : "unknown", *ret_code);
+        } else {
+            logg(LOGG_DEBUG, "ClamESF: Clean: %s\n",
+                 event_data->pathname ? event_data->pathname : "unknown");
         }
 
-        es_respond_auth_result(g_client, (const es_message_t *)event_data->es_msg, result, cache);
-        es_release_message((const es_message_t *)event_data->es_msg);
+        /* AUTH mode only: respond to the ESF message if one is attached.
+         * In NOTIFY mode es_msg is NULL so this block is skipped.
+         * WARNING: es_respond_auth_result must only be called on AUTH events. */
+        if (event_data->es_msg) {
+            es_auth_result_t auth_result = ES_AUTH_RESULT_ALLOW;
+            bool cache = true;
+
+            if ((*err && b_deny_on_error) || *infected) {
+                 auth_result = ES_AUTH_RESULT_DENY;
+                 cache = false;
+            }
+
+            es_respond_result_t resp = es_respond_auth_result(g_client, (const es_message_t *)event_data->es_msg, auth_result, cache);
+            if (resp != ES_RESPOND_RESULT_SUCCESS) {
+                logg(LOGG_ERROR, "ClamESF: failed to respond to AUTH event for %s (result=%d)\n",
+                     event_data->pathname ? event_data->pathname : "unknown", resp);
+            }
+            es_release_message((const es_message_t *)event_data->es_msg);
+        }
     }
 #endif
 
@@ -357,7 +379,6 @@ void *onas_scan_worker(void *arg)
     b_dir      = event_data->bool_opts & ONAS_SCTH_B_DIR ? 1 : 0;
     b_file     = event_data->bool_opts & ONAS_SCTH_B_FILE ? 1 : 0;
     b_inotify  = event_data->bool_opts & ONAS_SCTH_B_INOTIFY ? 1 : 0;
-    b_inotify  = event_data->bool_opts & ONAS_SCTH_B_INOTIFY ? 1 : 0;
     b_fanotify = event_data->bool_opts & ONAS_SCTH_B_FANOTIFY ? 1 : 0;
 #if defined(HAVE_MACOS_ESF)
     b_esf = event_data->bool_opts & ONAS_SCTH_B_ESF ? 1 : 0;
@@ -440,7 +461,9 @@ cl_error_t onas_map_context_info_to_event_data(struct onas_context *ctx, struct 
     (*event_data)->scantype       = ctx->scantype;
     (*event_data)->timeout        = ctx->timeout;
     (*event_data)->maxstream      = ctx->maxstream;
+#if defined(HAVE_SYS_FANOTIFY_H)
     (*event_data)->fan_fd         = ctx->fan_fd;
+#endif
     (*event_data)->sizelimit      = ctx->sizelimit;
     (*event_data)->retry_attempts = ctx->retry_attempts;
 

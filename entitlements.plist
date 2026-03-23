@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.application-identifier</key>
+	<string>C7KSRZC3Q9.com.resistine.clamonacc</string>
+	<key>com.apple.developer.endpoint-security.client</key>
+	<true/>
+	<key>com.apple.developer.team-identifier</key>
+	<string>C7KSRZC3Q9</string>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>C7KSRZC3Q9.*</string>
+	</array>
+</dict>
+</plist>

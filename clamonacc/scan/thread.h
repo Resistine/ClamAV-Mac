@@ -68,7 +68,7 @@ struct onas_scan_event {
     int32_t scantype;
     int64_t maxstream;
     int64_t timeout;
-    uint8_t bool_opts;
+    uint16_t bool_opts;
 } __attribute((packed));
 
 #ifdef HAVE_PRAGMA_PACK
