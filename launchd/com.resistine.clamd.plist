@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  LaunchDaemon for clamd (ClamAV scanning daemon).
+
+  clamonacc forwards files to clamd for scanning. clamd must be running
+  before clamonacc can operate. This plist is installed to
+  /Library/LaunchDaemons/ by the Resistine Desktop installer.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.resistine.clamd</string>
+
+    <!-- Rewritten at install time by build-distribution.sh -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Applications/Resistine.app/Contents/Helpers/clamd</string>
+        <string>--config-file</string>
+        <string>/Library/Application Support/Resistine/clamav/clamd.conf</string>
+        <string>--foreground</string>
+    </array>
+
+    <!-- Start at boot, restart on crash -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>UserName</key>
+    <string>root</string>
+    <key>GroupName</key>
+    <string>wheel</string>
+
+    <!-- Override hardcoded CI certs path so clamd can verify CVD signatures -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CVD_CERTS_DIR</key>
+        <string>/Applications/Resistine.app/Contents/certs</string>
+    </dict>
+
+    <!-- Logging -->
+    <key>StandardOutPath</key>
+    <string>/Library/Application Support/Resistine/clamav/log/clamd.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Library/Application Support/Resistine/clamav/log/clamd.stderr.log</string>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+</dict>
+</plist>

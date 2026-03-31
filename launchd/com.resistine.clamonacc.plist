@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  LaunchDaemon for ClamAV on-access scanning (clamonacc) via ESF.
+
+  Installed to /Library/LaunchDaemons/ by the Resistine Desktop installer.
+  The ProgramArguments path is rewritten at install time to point at the
+  actual Resistine.app bundle location.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.resistine.clamonacc</string>
+
+    <!-- Rewritten at install time by build-distribution.sh -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Applications/Resistine.app/Contents/Helpers/ResistineClamAV.app/Contents/MacOS/clamonacc</string>
+        <string>--config-file</string>
+        <string>/Library/Application Support/Resistine/clamav/clamd.conf</string>
+        <string>-F</string>
+    </array>
+
+    <!-- Start at boot, restart on crash -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <!-- Must run as root for ESF -->
+    <key>UserName</key>
+    <string>root</string>
+    <key>GroupName</key>
+    <string>wheel</string>
+
+    <!-- Logging -->
+    <key>StandardOutPath</key>
+    <string>/Library/Application Support/Resistine/clamav/log/clamonacc.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Library/Application Support/Resistine/clamav/log/clamonacc.stderr.log</string>
+
+    <!-- Throttle restarts: wait 10s between crash-restarts -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <!-- Allow ESF — process needs Full Disk Access (TCC) -->
+    <key>ProcessType</key>
+    <string>Interactive</string>
+</dict>
+</plist>

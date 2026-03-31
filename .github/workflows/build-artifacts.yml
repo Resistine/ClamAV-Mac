@@ -165,6 +165,11 @@ jobs:
           # Entitlements for downstream signing (ESF)
           cp "$GITHUB_WORKSPACE/entitlements.plist" "$ARTIFACTS/entitlements.plist"
 
+          # LaunchDaemon plists for auto-start at boot
+          mkdir -p "$ARTIFACTS/launchd"
+          cp "$GITHUB_WORKSPACE/launchd/"*.plist "$ARTIFACTS/launchd/"
+          echo "Packaged: launchd plists"
+
           echo ""
           echo "=== Artifacts ==="
           ls -lhR "$ARTIFACTS"
@@ -178,6 +183,7 @@ jobs:
           cd build/artifacts
           find binaries -type f -exec shasum -a 256 {} + > checksums.txt
           find lib -type f -exec shasum -a 256 {} + >> checksums.txt
+          find launchd -type f -exec shasum -a 256 {} + >> checksums.txt
           shasum -a 256 entitlements.plist >> checksums.txt
           echo "=== Checksums ==="
           cat checksums.txt
