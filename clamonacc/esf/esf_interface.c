@@ -33,6 +33,7 @@
 
 // libclamav
 #include "clamav.h"
+#include "others.h"
 
 // common
 #include "output.h"
@@ -50,10 +51,17 @@
 // Queue headers
 #include "scan/onas_queue.h"
 #include "scan/thread.h"
+#include "scan/hash_cache.h"
 #include "misc/utils.h"
 
 static struct onas_context *g_esf_ctx = NULL;
 es_client_t *g_client = NULL;
+static bool g_auth_mode = false;
+
+/* Load shedding: auto-ALLOW AUTH events when queue is too deep */
+#define ESF_QUEUE_DEPTH_LIMIT 100
+#include <stdatomic.h>
+atomic_int g_pending_scans = 0;
 
 /* --- Dedup cache: suppress duplicate ESF events for the same path --- */
 #define DEDUP_SLOTS 4096
@@ -120,12 +128,22 @@ static bool onas_esf_is_excluded_path(const char *path)
     return false;
 }
 
+/* Respond ALLOW to an AUTH event so ESF doesn't SIGKILL us on timeout. */
+static void onas_esf_auth_allow(const es_message_t *message)
+{
+    es_respond_auth_result(g_client, message, ES_AUTH_RESULT_ALLOW, true);
+}
+
 static void onas_esf_handler(es_client_t *client __attribute__((unused)), const es_message_t *message)
 {
     struct onas_scan_event *event_data = NULL;
+    bool is_auth = (message->event_type == ES_EVENT_TYPE_AUTH_OPEN);
 
-    if (message->event_type != ES_EVENT_TYPE_NOTIFY_OPEN) {
+    if (message->event_type != ES_EVENT_TYPE_NOTIFY_OPEN &&
+        message->event_type != ES_EVENT_TYPE_AUTH_OPEN) {
         logg(LOGG_DEBUG, "ClamESF: ignoring unexpected event type %d\n", message->event_type);
+        if (message->action_type == ES_ACTION_TYPE_AUTH)
+            onas_esf_auth_allow(message);
         return;
     }
 
@@ -139,8 +157,10 @@ static void onas_esf_handler(es_client_t *client __attribute__((unused)), const 
     if (proc_name) {
         const char *basename = strrchr(proc_name, '/');
         basename = basename ? basename + 1 : proc_name;
-        if (strcmp(basename, "clamd") == 0 || strcmp(basename, "clamonacc") == 0)
+        if (strcmp(basename, "clamd") == 0 || strcmp(basename, "clamonacc") == 0) {
+            if (is_auth) onas_esf_auth_allow(message);
             return;
+        }
     }
 
     /* Fast-path: skip files under OnAccessExcludePath.
@@ -150,16 +170,49 @@ static void onas_esf_handler(es_client_t *client __attribute__((unused)), const 
     if (message->event.open.file) {
         file_path = message->event.open.file->path.data;
     }
-    if (!file_path || onas_esf_is_excluded_path(file_path))
+    if (!file_path || onas_esf_is_excluded_path(file_path)) {
+        if (is_auth) onas_esf_auth_allow(message);
         return;
+    }
 
     /* Skip if we already queued a scan for this exact path recently */
-    if (onas_esf_dedup_check(file_path))
+    if (onas_esf_dedup_check(file_path)) {
+        if (is_auth) onas_esf_auth_allow(message);
         return;
+    }
+
+    /* Fast-path: check scan result cache by stat metadata */
+    {
+        STATBUF sb;
+        if (CLAMSTAT(file_path, &sb) == 0) {
+            onas_cache_result_t cres = onas_cache_lookup(sb.st_dev, sb.st_ino, sb.st_mtime, sb.st_size);
+            if (cres == ONAS_CACHE_HIT_CLEAN) {
+                if (is_auth) onas_esf_auth_allow(message);
+                return;
+            }
+            if (cres == ONAS_CACHE_HIT_INFECTED) {
+                if (is_auth) {
+                    es_respond_auth_result(g_client, message, ES_AUTH_RESULT_DENY, false);
+                } else {
+                    logg(LOGG_WARNING, "ClamESF: cached INFECTED: %s\n", file_path);
+                }
+                return;
+            }
+        }
+    }
+
+    /* Load shedding: if too many scans pending, auto-ALLOW to prevent SIGKILL */
+    if (is_auth && atomic_load(&g_pending_scans) > ESF_QUEUE_DEPTH_LIMIT) {
+        logg(LOGG_WARNING, "ClamESF: load shedding — auto-ALLOW for %s (queue depth > %d)\n",
+             file_path, ESF_QUEUE_DEPTH_LIMIT);
+        onas_esf_auth_allow(message);
+        return;
+    }
 
     event_data = calloc(1, sizeof(struct onas_scan_event));
     if (NULL == event_data) {
         logg(LOGG_ERROR, "ClamESF: could not allocate memory for event data struct\n");
+        if (is_auth) onas_esf_auth_allow(message);
         return;
     }
 
@@ -167,14 +220,26 @@ static void onas_esf_handler(es_client_t *client __attribute__((unused)), const 
     if (CL_SUCCESS != onas_map_context_info_to_event_data(g_esf_ctx, &event_data)) {
         logg(LOGG_ERROR, "ClamESF: failed to map context info\n");
         free(event_data);
+        if (is_auth) onas_esf_auth_allow(message);
         return;
     }
 
     event_data->bool_opts |= ONAS_SCTH_B_ESF;
     event_data->bool_opts |= ONAS_SCTH_B_SCAN;
     event_data->bool_opts |= ONAS_SCTH_B_FILE;
-    /* NOTIFY mode: no es_msg to respond to, scan thread will just log detections */
-    event_data->es_msg = NULL;
+
+    if (is_auth) {
+        /* AUTH mode: retain the ESF message so the scan worker can respond
+         * with ALLOW or DENY after scanning completes.  The worker thread
+         * calls es_respond_auth_result() and es_release_message(). */
+        es_retain_message(message);
+        event_data->es_msg = (void *)message;
+        clock_gettime(CLOCK_MONOTONIC, &event_data->enqueue_time);
+        atomic_fetch_add(&g_pending_scans, 1);
+    } else {
+        event_data->es_msg = NULL;
+        memset(&event_data->enqueue_time, 0, sizeof(event_data->enqueue_time));
+    }
 
     // Copy the path for logging/logic convenience
     if (message->event.open.file->path.data && message->event.open.file->path.length > 0) {
@@ -185,6 +250,10 @@ static void onas_esf_handler(es_client_t *client __attribute__((unused)), const 
 
     if (!event_data->pathname) {
         logg(LOGG_ERROR, "ClamESF: OOM duplicating path\n");
+        if (is_auth) {
+            onas_esf_auth_allow(message);
+            es_release_message(message);
+        }
         free(event_data);
         return;
     }
@@ -192,12 +261,17 @@ static void onas_esf_handler(es_client_t *client __attribute__((unused)), const 
     /* Queue the event for async scanning */
     if (CL_SUCCESS != onas_queue_event(event_data)) {
         logg(LOGG_ERROR, "ClamESF: failed to queue event\n");
+        if (is_auth) {
+            onas_esf_auth_allow(message);
+            es_release_message(message);
+        }
         free(event_data->pathname);
         free(event_data);
         return;
     }
 
-    logg(LOGG_DEBUG, "ClamESF: Queued scan for: %s\n", file_path);
+    logg(LOGG_DEBUG, "ClamESF: Queued %s scan for: %s\n",
+         is_auth ? "AUTH" : "NOTIFY", file_path);
 }
 
 cl_error_t onas_setup_esf(struct onas_context **ctx)
@@ -279,15 +353,26 @@ cl_error_t onas_setup_esf(struct onas_context **ctx)
         return CL_EARG;
     }
 
-    // Subscribe to NOTIFY events — detect mode (no response deadline, no SIGKILL).
-    // AUTH mode requires sub-second scan response times; switch to AUTH once the
-    // scan pipeline is fast enough to meet the ESF deadline.
-    es_event_type_t events[] = { ES_EVENT_TYPE_NOTIFY_OPEN };
-    if (es_subscribe(g_client, events, 1) != ES_RETURN_SUCCESS) {
-        logg(LOGG_ERROR, "ClamESF: Failed to subscribe to NOTIFY_OPEN events.\n");
-        es_delete_client(g_client);
-        g_client = NULL;
-        return CL_EARG;
+    /* Choose AUTH (prevention) or NOTIFY (detection-only) based on config */
+    if (optget(g_esf_ctx->clamdopts, "OnAccessPrevention")->enabled) {
+        g_auth_mode = true;
+        es_event_type_t events[] = { ES_EVENT_TYPE_AUTH_OPEN };
+        if (es_subscribe(g_client, events, 1) != ES_RETURN_SUCCESS) {
+            logg(LOGG_ERROR, "ClamESF: Failed to subscribe to AUTH_OPEN events.\n");
+            es_delete_client(g_client);
+            g_client = NULL;
+            return CL_EARG;
+        }
+        logg(LOGG_INFO, "ClamESF: AUTH mode (prevention) — malicious file opens will be BLOCKED.\n");
+    } else {
+        es_event_type_t events[] = { ES_EVENT_TYPE_NOTIFY_OPEN };
+        if (es_subscribe(g_client, events, 1) != ES_RETURN_SUCCESS) {
+            logg(LOGG_ERROR, "ClamESF: Failed to subscribe to NOTIFY_OPEN events.\n");
+            es_delete_client(g_client);
+            g_client = NULL;
+            return CL_EARG;
+        }
+        logg(LOGG_INFO, "ClamESF: NOTIFY mode (detection-only) — malicious files will be logged, not blocked.\n");
     }
 
     logg(LOGG_INFO, "ClamESF: Client created and subscribed successfully (%d paths monitored).\n", path_count);

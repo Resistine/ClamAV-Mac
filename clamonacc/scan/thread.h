@@ -25,6 +25,8 @@
 #include <sys/fanotify.h>
 #endif
 
+#include <time.h>
+
 // libclamav
 #include "clamav.h"
 
@@ -62,6 +64,7 @@ struct onas_scan_event {
     struct fanotify_event_metadata *fmd;
 #elif defined(HAVE_MACOS_ESF)
     void *es_msg;
+    struct timespec enqueue_time;
 #endif
     uint8_t retry_attempts;
     uint64_t sizelimit;

@@ -57,6 +57,7 @@
 #include "fanotif/fanotif.h"
 #include "inotif/inotif.h"
 #include "scan/onas_queue.h"
+#include "scan/hash_cache.h"
 
 #if defined(HAVE_MACOS_ESF)
 #include "esf/esf_interface.h"
@@ -195,6 +196,9 @@ int main(int argc, char **argv)
             break;
     }
 
+    /* Initialize the scan result cache */
+    onas_cache_init();
+
     /* Setup our event queue */
     ctx->maxthreads = optget(ctx->clamdopts, "OnAccessMaxThreads")->numarg;
 
@@ -260,6 +264,12 @@ int main(int argc, char **argv)
             ret = 2;
             goto done;
             break;
+    }
+
+    if (optget(ctx->clamdopts, "OnAccessPrevention")->enabled) {
+        logg(LOGG_INFO, "Clamonacc: mode = AUTH (real-time prevention) — malicious files will be BLOCKED\n");
+    } else {
+        logg(LOGG_INFO, "Clamonacc: mode = NOTIFY (detection-only) — malicious files will be logged\n");
     }
 #else
     mprintf(LOGG_ERROR, "Clamonacc: currently, this application only runs on linux systems with fanotify enabled\n");

@@ -428,7 +428,12 @@ cl_error_t onas_setup_client(struct onas_context **ctx)
 
     remote = (*ctx)->isremote | optget(opts, "stream")->enabled;
 #ifdef HAVE_FD_PASSING
-    if (!remote && optget((*ctx)->clamdopts, "LocalSocket")->enabled && (optget(opts, "fdpass")->enabled)) {
+    if (!remote && optget((*ctx)->clamdopts, "LocalSocket")->enabled &&
+        (optget(opts, "fdpass")->enabled
+#if defined(HAVE_MACOS_ESF)
+         || 1 /* ESF active: auto-enable FILDES to avoid recursive events */
+#endif
+        )) {
         if (onas_set_sock_only_once(*ctx) == CL_EWRITE) {
             return CL_EWRITE;
         }

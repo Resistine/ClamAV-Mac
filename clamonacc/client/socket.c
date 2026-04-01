@@ -22,6 +22,7 @@
 #include "clamav-config.h"
 #endif
 
+#include <stdbool.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -51,10 +52,14 @@ cl_error_t onas_set_sock_only_once(struct onas_context *ctx)
 
 #ifdef HAVE_FD_PASSING
     if (onas_sock.written != 1) {
+        bool fdpass_requested = optget(ctx->opts, "fdpass")->enabled;
+#if defined(HAVE_MACOS_ESF)
+        fdpass_requested = true; /* ESF: always use fd passing to avoid recursive events */
+#endif
         if (((opt =
                   optget(ctx->clamdopts, "LocalSocket"))
                  ->enabled) &&
-            optget(ctx->opts, "fdpass")->enabled) {
+            fdpass_requested) {
             memset((void *)&onas_sock, 0, sizeof(onas_sock));
             onas_sock.sock.sun_family = AF_UNIX;
             strncpy(onas_sock.sock.sun_path, opt->strarg, sizeof(onas_sock.sock.sun_path));

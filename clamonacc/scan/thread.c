@@ -36,7 +36,10 @@
 
 #if defined(HAVE_MACOS_ESF)
 #include <EndpointSecurity/EndpointSecurity.h>
-extern es_client_t *g_client; // Need access to the global client for responding
+#include <stdatomic.h>
+extern es_client_t *g_client;
+extern atomic_int g_pending_scans;
+#define ESF_DEADLINE_SEC 2.5
 #endif
 
 // libclamav
@@ -50,8 +53,7 @@ extern es_client_t *g_client; // Need access to the global client for responding
 #include "../misc/utils.h"
 #include "../client/client.h"
 #include "thread.h"
-
-static pthread_mutex_t onas_scan_lock = PTHREAD_MUTEX_INITIALIZER;
+#include "hash_cache.h"
 
 static int onas_scan(struct onas_scan_event *event_data, const char *fname, STATBUF sb, int *infected, int *err, cl_error_t *ret_code);
 static cl_error_t onas_scan_safe(struct onas_scan_event *event_data, const char *fname, STATBUF sb, int *infected, int *err, cl_error_t *ret_code);
@@ -110,11 +112,10 @@ static int onas_scan(struct onas_scan_event *event_data, const char *fname, STAT
 }
 
 /**
- * @brief Thread-safe scan wrapper to ensure there's no process contention over use of the socket.
+ * @brief Scan wrapper that forwards a file to clamd via onas_client_scan.
  *
- * This is noticeably slower, and I had no issues running smaller scale tests with it off, but better than sorry until more testing can be done.
- *
- * TODO: make this configurable?
+ * Each worker thread creates its own curl/socket connection, so no
+ * serialization is needed here — clamd handles concurrency internally.
  */
 static cl_error_t onas_scan_safe(struct onas_scan_event *event_data, const char *fname, STATBUF sb, int *infected, int *err, cl_error_t *ret_code)
 {
@@ -132,12 +133,8 @@ static cl_error_t onas_scan_safe(struct onas_scan_event *event_data, const char 
     }
 #endif
 
-    pthread_mutex_lock(&onas_scan_lock);
-
     ret = onas_client_scan(event_data->tcpaddr, event_data->portnum, event_data->scantype, event_data->maxstream,
                            fname, fd, event_data->timeout, sb, infected, err, ret_code);
-
-    pthread_mutex_unlock(&onas_scan_lock);
 
     return ret;
 }
@@ -177,6 +174,27 @@ static cl_error_t onas_scan_thread_scanfile(struct onas_scan_event *event_data, 
     }
 #endif
 
+#if defined(HAVE_MACOS_ESF)
+    /* Deadline enforcement: if we've been in the queue too long, respond
+     * ALLOW immediately to prevent ESF from SIGKILLing us (~3-4s deadline). */
+    if (b_esf && event_data->es_msg && event_data->enqueue_time.tv_sec > 0) {
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        double elapsed = (double)(now.tv_sec - event_data->enqueue_time.tv_sec)
+                       + (double)(now.tv_nsec - event_data->enqueue_time.tv_nsec) / 1e9;
+        if (elapsed > ESF_DEADLINE_SEC) {
+            logg(LOGG_WARNING, "ClamESF: deadline exceeded (%.1fs) — auto-ALLOW for %s\n",
+                 elapsed, event_data->pathname ? event_data->pathname : "unknown");
+            es_respond_auth_result(g_client, (const es_message_t *)event_data->es_msg,
+                                   ES_AUTH_RESULT_ALLOW, false);
+            es_release_message((const es_message_t *)event_data->es_msg);
+            event_data->es_msg = NULL;
+            atomic_fetch_sub(&g_pending_scans, 1);
+            return CL_SUCCESS;
+        }
+    }
+#endif
+
     if (b_scan) {
         ret = onas_scan(event_data, fname, sb, infected, err, ret_code);
 
@@ -206,6 +224,12 @@ static cl_error_t onas_scan_thread_scanfile(struct onas_scan_event *event_data, 
                  event_data->pathname ? event_data->pathname : "unknown");
         }
 
+        /* Populate scan result cache (skip on scan errors) */
+        if (!*err) {
+            onas_cache_insert(sb.st_dev, sb.st_ino, sb.st_mtime, sb.st_size,
+                              *infected ? ONAS_VERDICT_INFECTED : ONAS_VERDICT_CLEAN);
+        }
+
         /* AUTH mode only: respond to the ESF message if one is attached.
          * In NOTIFY mode es_msg is NULL so this block is skipped.
          * WARNING: es_respond_auth_result must only be called on AUTH events. */
@@ -224,6 +248,7 @@ static cl_error_t onas_scan_thread_scanfile(struct onas_scan_event *event_data, 
                      event_data->pathname ? event_data->pathname : "unknown", resp);
             }
             es_release_message((const es_message_t *)event_data->es_msg);
+            atomic_fetch_sub(&g_pending_scans, 1);
         }
     }
 #endif

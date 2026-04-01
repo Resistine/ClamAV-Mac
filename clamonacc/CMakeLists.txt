@@ -27,7 +27,8 @@ target_sources( clamonacc
         misc/utils.h
         scan/onas_queue.c
         scan/onas_queue.h
-        scan/thread.c
+        scan/hash_cache.c
+        scan/hash_cache.h
         scan/thread.c
         scan/thread.h )
 
