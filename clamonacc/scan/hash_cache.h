@@ -41,6 +41,13 @@ void onas_cache_destroy(void);
 onas_cache_result_t onas_cache_lookup(dev_t dev, ino_t ino, time_t mtime, off_t size);
 
 /**
+ * Non-blocking cache lookup using trylock.
+ * Returns MISS if the shard lock is contended (safe for ESF handler hot path).
+ */
+onas_cache_result_t onas_cache_lookup_nonblocking(dev_t dev, ino_t ino,
+                                                   time_t mtime, off_t size);
+
+/**
  * Insert or update a cache entry after scanning.
  */
 void onas_cache_insert(dev_t dev, ino_t ino, time_t mtime, off_t size, onas_verdict_t verdict);

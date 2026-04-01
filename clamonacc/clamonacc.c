@@ -77,6 +77,14 @@ static void onas_clamonacc_exit(int sig)
         mprintf(LOGG_ERROR, "Clamonacc: clamonacc has experienced a fatal error, if you continue to see this error, please run clamonacc with --verbose and report the issue and crash report to the developers\n");
     }
 
+#if defined(HAVE_MACOS_ESF)
+    /* Tear down ESF FIRST — this unsubscribes and deletes the client so
+     * pending AUTH events are drained.  If we cancel threads first, the
+     * ESF dispatch queue can still deliver events that never get a
+     * response, triggering the ESF deadline SIGKILL. */
+    onas_teardown_esf();
+#endif
+
     if (g_ctx) {
         if (g_ctx->fan_fd) {
             close(g_ctx->fan_fd);
@@ -267,7 +275,7 @@ int main(int argc, char **argv)
     }
 
     if (optget(ctx->clamdopts, "OnAccessPrevention")->enabled) {
-        logg(LOGG_INFO, "Clamonacc: mode = AUTH (real-time prevention) — malicious files will be BLOCKED\n");
+        logg(LOGG_INFO, "Clamonacc: mode = AUTH (real-time prevention) — cached malware BLOCKED, new files scanned async\n");
     } else {
         logg(LOGG_INFO, "Clamonacc: mode = NOTIFY (detection-only) — malicious files will be logged\n");
     }

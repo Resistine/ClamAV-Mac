@@ -44,6 +44,13 @@ cl_error_t onas_setup_esf(struct onas_context **ctx);
  */
 int onas_esf_eloop(struct onas_context **ctx);
 
+/*
+ * Tear down the ESF client.
+ * Must be called FIRST in shutdown — before canceling threads — so that
+ * pending AUTH events are drained and the ESF deadline SIGKILL is avoided.
+ */
+void onas_teardown_esf(void);
+
 #endif /* __APPLE__ */
 
 #endif /* __ONAS_ESF_H */

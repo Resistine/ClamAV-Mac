@@ -35,11 +35,8 @@
 #endif
 
 #if defined(HAVE_MACOS_ESF)
-#include <EndpointSecurity/EndpointSecurity.h>
 #include <stdatomic.h>
-extern es_client_t *g_client;
 extern atomic_int g_pending_scans;
-#define ESF_DEADLINE_SEC 2.5
 #endif
 
 // libclamav
@@ -174,26 +171,9 @@ static cl_error_t onas_scan_thread_scanfile(struct onas_scan_event *event_data, 
     }
 #endif
 
-#if defined(HAVE_MACOS_ESF)
-    /* Deadline enforcement: if we've been in the queue too long, respond
-     * ALLOW immediately to prevent ESF from SIGKILLing us (~3-4s deadline). */
-    if (b_esf && event_data->es_msg && event_data->enqueue_time.tv_sec > 0) {
-        struct timespec now;
-        clock_gettime(CLOCK_MONOTONIC, &now);
-        double elapsed = (double)(now.tv_sec - event_data->enqueue_time.tv_sec)
-                       + (double)(now.tv_nsec - event_data->enqueue_time.tv_nsec) / 1e9;
-        if (elapsed > ESF_DEADLINE_SEC) {
-            logg(LOGG_WARNING, "ClamESF: deadline exceeded (%.1fs) — auto-ALLOW for %s\n",
-                 elapsed, event_data->pathname ? event_data->pathname : "unknown");
-            es_respond_auth_result(g_client, (const es_message_t *)event_data->es_msg,
-                                   ES_AUTH_RESULT_ALLOW, false);
-            es_release_message((const es_message_t *)event_data->es_msg);
-            event_data->es_msg = NULL;
-            atomic_fetch_sub(&g_pending_scans, 1);
-            return CL_SUCCESS;
-        }
-    }
-#endif
+    /* Note: ESF deadline enforcement was removed — AUTH responses are now
+     * sent immediately in the handler before queuing (see esf_interface.c).
+     * Scans here are purely async for cache population. */
 
     if (b_scan) {
         ret = onas_scan(event_data, fname, sb, infected, err, ret_code);
@@ -230,26 +210,12 @@ static cl_error_t onas_scan_thread_scanfile(struct onas_scan_event *event_data, 
                               *infected ? ONAS_VERDICT_INFECTED : ONAS_VERDICT_CLEAN);
         }
 
-        /* AUTH mode only: respond to the ESF message if one is attached.
-         * In NOTIFY mode es_msg is NULL so this block is skipped.
-         * WARNING: es_respond_auth_result must only be called on AUTH events. */
-        if (event_data->es_msg) {
-            es_auth_result_t auth_result = ES_AUTH_RESULT_ALLOW;
-            bool cache = true;
-
-            if ((*err && b_deny_on_error) || *infected) {
-                 auth_result = ES_AUTH_RESULT_DENY;
-                 cache = false;
-            }
-
-            es_respond_result_t resp = es_respond_auth_result(g_client, (const es_message_t *)event_data->es_msg, auth_result, cache);
-            if (resp != ES_RESPOND_RESULT_SUCCESS) {
-                logg(LOGG_ERROR, "ClamESF: failed to respond to AUTH event for %s (result=%d)\n",
-                     event_data->pathname ? event_data->pathname : "unknown", resp);
-            }
-            es_release_message((const es_message_t *)event_data->es_msg);
-            atomic_fetch_sub(&g_pending_scans, 1);
-        }
+        /* AUTH responses are now sent immediately in the ESF handler
+         * (before queuing) to avoid ESF deadline SIGKILLs.  The scan
+         * result cache is populated above so the NEXT open of an
+         * infected file will be DENIED by the handler's cache lookup.
+         * Decrement the pending-scans counter used for load shedding. */
+        atomic_fetch_sub(&g_pending_scans, 1);
     }
 #endif
 

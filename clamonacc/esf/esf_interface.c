@@ -39,6 +39,7 @@
 #include "output.h"
 #include "optparser.h"
 
+#include <dispatch/dispatch.h>
 #include <mach/mach.h>
 #include <mach/message.h>
 #include <mach/task_info.h>
@@ -57,6 +58,13 @@
 static struct onas_context *g_esf_ctx = NULL;
 es_client_t *g_client = NULL;
 static bool g_auth_mode = false;
+
+/* Concurrent GCD queue for post-AUTH-response async work (scan queueing).
+ * In AUTH mode the ESF handler must return ASAP after responding so the
+ * serial ESF dispatch queue can deliver the next event.  All post-response
+ * work (dedup, path checks, memory alloc, scan queue insertion) is
+ * dispatched here instead of running inline. */
+static dispatch_queue_t g_async_scan_queue = NULL;
 
 /* Load shedding: auto-ALLOW AUTH events when queue is too deep */
 #define ESF_QUEUE_DEPTH_LIMIT 100
@@ -134,144 +142,179 @@ static void onas_esf_auth_allow(const es_message_t *message)
     es_respond_auth_result(g_client, message, ES_AUTH_RESULT_ALLOW, true);
 }
 
-static void onas_esf_handler(es_client_t *client __attribute__((unused)), const es_message_t *message)
+/* Post-response async work: dedup, path filtering, scan queue insertion.
+ * Called either inline (NOTIFY mode) or on a GCD concurrent queue
+ * (AUTH mode) so the ESF serial dispatch queue stays unblocked.
+ * Owns `path_copy` and must free it. `proc_copy` may be NULL. */
+static void onas_esf_queue_scan(char *path_copy, char *proc_copy,
+                                bool is_auth)
 {
     struct onas_scan_event *event_data = NULL;
-    bool is_auth = (message->event_type == ES_EVENT_TYPE_AUTH_OPEN);
 
-    if (message->event_type != ES_EVENT_TYPE_NOTIFY_OPEN &&
-        message->event_type != ES_EVENT_TYPE_AUTH_OPEN) {
-        logg(LOGG_DEBUG, "ClamESF: ignoring unexpected event type %d\n", message->event_type);
-        if (message->action_type == ES_ACTION_TYPE_AUTH)
-            onas_esf_auth_allow(message);
-        return;
-    }
+    logg(LOGG_DEBUG, "ClamESF: handler — auth=%d path=%s\n",
+         is_auth, path_copy ? path_copy : "(null)");
 
-    /* Skip events caused by clamd or clamonacc to avoid scan loops.
-     * The process info is in message->process (the instigator).
-     * Note: executable is _Nullable per Apple docs (Jetsam, early boot, etc.) */
-    const char *proc_name = NULL;
-    if (message->process && message->process->executable) {
-        proc_name = message->process->executable->path.data;
-    }
-    if (proc_name) {
-        const char *basename = strrchr(proc_name, '/');
-        basename = basename ? basename + 1 : proc_name;
-        if (strcmp(basename, "clamd") == 0 || strcmp(basename, "clamonacc") == 0) {
-            if (is_auth) onas_esf_auth_allow(message);
-            return;
+    /* Skip events caused by clamd or clamonacc to avoid scan loops. */
+    if (proc_copy) {
+        const char *basename = strrchr(proc_copy, '/');
+        basename = basename ? basename + 1 : proc_copy;
+        if (strcmp(basename, "clamd") == 0 ||
+            strcmp(basename, "clamonacc") == 0) {
+            goto out;
         }
     }
 
-    /* Fast-path: skip files under OnAccessExcludePath.
-     * Include-path filtering is already handled at the kernel level via
-     * inverted target path muting set up in onas_setup_esf(). */
-    const char *file_path = NULL;
-    if (message->event.open.file) {
-        file_path = message->event.open.file->path.data;
-    }
-    if (!file_path || onas_esf_is_excluded_path(file_path)) {
-        if (is_auth) onas_esf_auth_allow(message);
-        return;
-    }
+    if (!path_copy || onas_esf_is_excluded_path(path_copy))
+        goto out;
 
-    /* Skip if we already queued a scan for this exact path recently */
-    if (onas_esf_dedup_check(file_path)) {
-        if (is_auth) onas_esf_auth_allow(message);
-        return;
-    }
+    if (onas_esf_dedup_check(path_copy))
+        goto out;
 
-    /* Fast-path: check scan result cache by stat metadata */
-    {
-        STATBUF sb;
-        if (CLAMSTAT(file_path, &sb) == 0) {
-            onas_cache_result_t cres = onas_cache_lookup(sb.st_dev, sb.st_ino, sb.st_mtime, sb.st_size);
-            if (cres == ONAS_CACHE_HIT_CLEAN) {
-                if (is_auth) onas_esf_auth_allow(message);
-                return;
-            }
-            if (cres == ONAS_CACHE_HIT_INFECTED) {
-                if (is_auth) {
-                    es_respond_auth_result(g_client, message, ES_AUTH_RESULT_DENY, false);
-                } else {
-                    logg(LOGG_WARNING, "ClamESF: cached INFECTED: %s\n", file_path);
-                }
-                return;
-            }
-        }
-    }
-
-    /* Load shedding: if too many scans pending, auto-ALLOW to prevent SIGKILL */
-    if (is_auth && atomic_load(&g_pending_scans) > ESF_QUEUE_DEPTH_LIMIT) {
-        logg(LOGG_WARNING, "ClamESF: load shedding — auto-ALLOW for %s (queue depth > %d)\n",
-             file_path, ESF_QUEUE_DEPTH_LIMIT);
-        onas_esf_auth_allow(message);
-        return;
+    /* Load shedding: if too many scans pending, skip queueing entirely */
+    if (atomic_load(&g_pending_scans) > ESF_QUEUE_DEPTH_LIMIT) {
+        logg(LOGG_WARNING,
+             "ClamESF: load shedding — skipping scan for %s "
+             "(queue depth > %d)\n",
+             path_copy, ESF_QUEUE_DEPTH_LIMIT);
+        goto out;
     }
 
     event_data = calloc(1, sizeof(struct onas_scan_event));
     if (NULL == event_data) {
-        logg(LOGG_ERROR, "ClamESF: could not allocate memory for event data struct\n");
-        if (is_auth) onas_esf_auth_allow(message);
-        return;
+        logg(LOGG_ERROR,
+             "ClamESF: could not allocate memory for event data struct\n");
+        goto out;
     }
 
-    /* Map context info to event data */
-    if (CL_SUCCESS != onas_map_context_info_to_event_data(g_esf_ctx, &event_data)) {
+    if (CL_SUCCESS != onas_map_context_info_to_event_data(g_esf_ctx,
+                                                           &event_data)) {
         logg(LOGG_ERROR, "ClamESF: failed to map context info\n");
         free(event_data);
-        if (is_auth) onas_esf_auth_allow(message);
-        return;
+        goto out;
     }
 
     event_data->bool_opts |= ONAS_SCTH_B_ESF;
     event_data->bool_opts |= ONAS_SCTH_B_SCAN;
     event_data->bool_opts |= ONAS_SCTH_B_FILE;
 
-    if (is_auth) {
-        /* AUTH mode: retain the ESF message so the scan worker can respond
-         * with ALLOW or DENY after scanning completes.  The worker thread
-         * calls es_respond_auth_result() and es_release_message(). */
-        es_retain_message(message);
-        event_data->es_msg = (void *)message;
-        clock_gettime(CLOCK_MONOTONIC, &event_data->enqueue_time);
-        atomic_fetch_add(&g_pending_scans, 1);
-    } else {
-        event_data->es_msg = NULL;
-        memset(&event_data->enqueue_time, 0, sizeof(event_data->enqueue_time));
-    }
+    event_data->es_msg = NULL;
+    memset(&event_data->enqueue_time, 0, sizeof(event_data->enqueue_time));
+    atomic_fetch_add(&g_pending_scans, 1);
 
-    // Copy the path for logging/logic convenience
-    if (message->event.open.file->path.data && message->event.open.file->path.length > 0) {
-        event_data->pathname = strdup(message->event.open.file->path.data);
-    } else {
-         event_data->pathname = strdup("unknown definition");
-    }
+    /* Transfer ownership of path_copy to the event */
+    event_data->pathname = path_copy;
+    path_copy = NULL;  /* prevent free in out: */
 
-    if (!event_data->pathname) {
-        logg(LOGG_ERROR, "ClamESF: OOM duplicating path\n");
-        if (is_auth) {
-            onas_esf_auth_allow(message);
-            es_release_message(message);
-        }
-        free(event_data);
-        return;
-    }
-
-    /* Queue the event for async scanning */
     if (CL_SUCCESS != onas_queue_event(event_data)) {
         logg(LOGG_ERROR, "ClamESF: failed to queue event\n");
-        if (is_auth) {
-            onas_esf_auth_allow(message);
-            es_release_message(message);
-        }
+        atomic_fetch_sub(&g_pending_scans, 1);
         free(event_data->pathname);
         free(event_data);
+        goto out;
+    }
+
+    logg(LOGG_DEBUG, "ClamESF: queued async scan for: %s\n",
+         event_data->pathname);
+
+out:
+    free(path_copy);
+    free(proc_copy);
+}
+
+static void onas_esf_handler(es_client_t *client __attribute__((unused)),
+                             const es_message_t *message)
+{
+    bool is_auth = (message->event_type == ES_EVENT_TYPE_AUTH_OPEN);
+
+    if (message->event_type != ES_EVENT_TYPE_NOTIFY_OPEN &&
+        message->event_type != ES_EVENT_TYPE_AUTH_OPEN) {
         return;
     }
 
-    logg(LOGG_DEBUG, "ClamESF: Queued %s scan for: %s\n",
-         is_auth ? "AUTH" : "NOTIFY", file_path);
+    const es_file_t *target = message->event.open.file;
+
+    /* AUTH FAST PATH — respond immediately, then dispatch async work.
+     *
+     * ESF delivers AUTH events on a serial queue.  Each message has a
+     * ~3-4 s deadline; if we don't call es_respond_auth_result before
+     * the deadline the kernel SIGKILLs us.  The handler must also
+     * *return* quickly so the serial queue can deliver the next event.
+     *
+     * Strategy: respond ALLOW/DENY immediately (only a cache lookup
+     * gates the decision), copy the path, dispatch everything else to
+     * a concurrent GCD queue, and return. */
+    if (is_auth) {
+        bool denied = false;
+
+        if (target) {
+            /* Non-blocking: if the shard is contended (scan worker
+             * inserting), we get MISS and fall through to ALLOW.
+             * The file will be scanned async and denied on next open. */
+            onas_cache_result_t cres = onas_cache_lookup_nonblocking(
+                target->stat.st_dev, target->stat.st_ino,
+                target->stat.st_mtime, target->stat.st_size);
+            if (cres == ONAS_CACHE_HIT_INFECTED) {
+                es_respond_auth_result(g_client, message,
+                                       ES_AUTH_RESULT_DENY, false);
+                denied = true;
+            }
+        }
+
+        if (!denied) {
+            onas_esf_auth_allow(message);
+        }
+
+        /* AUTH response sent — copy what we need, then dispatch async.
+         * The es_message_t is only valid for the duration of this
+         * callback, so we must copy the path and process name now. */
+        const char *file_path = target ? target->path.data : NULL;
+        char *path_copy = file_path ? strdup(file_path) : NULL;
+        char *proc_copy = NULL;
+        if (message->process && message->process->executable)
+            proc_copy = strdup(message->process->executable->path.data);
+
+        if (denied) {
+            /* Log on the async queue to avoid blocking ESF serial queue
+             * with the global logg_mutex + file I/O. */
+            dispatch_async(g_async_scan_queue, ^{
+                logg(LOGG_WARNING, "ClamESF: AUTH DENY (cached): %s\n",
+                     path_copy ? path_copy : "(null)");
+                free(path_copy);
+                free(proc_copy);
+            });
+            return;
+        }
+
+        /* Dispatch post-response work off the ESF serial queue */
+        dispatch_async(g_async_scan_queue, ^{
+            onas_esf_queue_scan(path_copy, proc_copy, true);
+        });
+        return;
+    }
+
+    /* --- NOTIFY mode: no deadline, run inline --- */
+    const char *file_path = target ? target->path.data : NULL;
+
+    /* NOTIFY-mode cache check (skip known-clean files) */
+    if (target) {
+        const struct stat *fst = &target->stat;
+        onas_cache_result_t cres = onas_cache_lookup(
+            fst->st_dev, fst->st_ino, fst->st_mtime, fst->st_size);
+        if (cres == ONAS_CACHE_HIT_CLEAN)
+            return;
+        if (cres == ONAS_CACHE_HIT_INFECTED) {
+            logg(LOGG_WARNING, "ClamESF: cached INFECTED: %s\n",
+                 file_path ? file_path : "(null)");
+            return;
+        }
+    }
+
+    char *path_copy = file_path ? strdup(file_path) : NULL;
+    char *proc_copy = NULL;
+    if (message->process && message->process->executable)
+        proc_copy = strdup(message->process->executable->path.data);
+
+    onas_esf_queue_scan(path_copy, proc_copy, false);
 }
 
 cl_error_t onas_setup_esf(struct onas_context **ctx)
@@ -284,6 +327,13 @@ cl_error_t onas_setup_esf(struct onas_context **ctx)
     }
 
     g_esf_ctx = *ctx;
+
+    /* Create the concurrent queue used to offload post-AUTH work */
+    if (!g_async_scan_queue) {
+        g_async_scan_queue = dispatch_queue_create(
+            "com.resistine.clamonacc.async-scan",
+            DISPATCH_QUEUE_CONCURRENT);
+    }
 
     logg(LOGG_INFO, "ClamESF: Initializing Endpoint Security Framework client...\n");
 
@@ -299,18 +349,30 @@ cl_error_t onas_setup_esf(struct onas_context **ctx)
         return CL_EARG;
     }
 
-    // Mute ClamAV's own process to avoid scanning files we open.
-    // This must happen BEFORE subscribing to avoid a startup event storm.
-    mach_msg_type_number_t count = TASK_AUDIT_TOKEN_COUNT;
-    audit_token_t token;
-    kern_return_t kr = task_info(mach_task_self(), TASK_AUDIT_TOKEN, (task_info_t)&token, &count);
-    if (kr == KERN_SUCCESS) {
-        if (es_mute_process(g_client, &token) != ES_RETURN_SUCCESS) {
-             logg(LOGG_WARNING, "ClamESF: Failed to mute own process. Recursive scanning loops possible!\n");
+    /* Mute ClamAV's own process to avoid scanning files we open.
+     * This must happen BEFORE subscribing to avoid a startup event storm. */
+    {
+        mach_msg_type_number_t count = TASK_AUDIT_TOKEN_COUNT;
+        audit_token_t token;
+        kern_return_t kr = task_info(mach_task_self(), TASK_AUDIT_TOKEN,
+                                     (task_info_t)&token, &count);
+        if (kr == KERN_SUCCESS) {
+            if (es_mute_process(g_client, &token) != ES_RETURN_SUCCESS) {
+                logg(LOGG_WARNING,
+                     "ClamESF: Failed to mute own process. "
+                     "Recursive scanning loops possible!\n");
+            }
+        } else {
+            logg(LOGG_WARNING,
+                 "ClamESF: Failed to get own audit token. Cannot mute self.\n");
         }
-    } else {
-        logg(LOGG_WARNING, "ClamESF: Failed to get own audit token. Cannot mute self.\n");
     }
+
+    /* Note: clamd is NOT muted at the ESF level because we can't easily
+     * obtain its audit_token_t.  Instead, onas_esf_queue_scan() checks
+     * the instigator process name and skips events from clamd/clamonacc.
+     * In AUTH mode, the handler still responds ALLOW instantly for these
+     * events (no deadline risk), and the async queue drops them. */
 
     /* Set up inverted target path muting so the kernel only delivers events
      * for files under OnAccessIncludePath directories.  Without this, every
@@ -363,7 +425,7 @@ cl_error_t onas_setup_esf(struct onas_context **ctx)
             g_client = NULL;
             return CL_EARG;
         }
-        logg(LOGG_INFO, "ClamESF: AUTH mode (prevention) — malicious file opens will be BLOCKED.\n");
+        logg(LOGG_INFO, "ClamESF: AUTH mode (prevention) — known malware will be BLOCKED on open, new files scanned async.\n");
     } else {
         es_event_type_t events[] = { ES_EVENT_TYPE_NOTIFY_OPEN };
         if (es_subscribe(g_client, events, 1) != ES_RETURN_SUCCESS) {
@@ -378,6 +440,24 @@ cl_error_t onas_setup_esf(struct onas_context **ctx)
     logg(LOGG_INFO, "ClamESF: Client created and subscribed successfully (%d paths monitored).\n", path_count);
 
     return CL_SUCCESS;
+}
+
+void onas_teardown_esf(void)
+{
+    if (g_client) {
+        logg(LOGG_INFO, "ClamESF: Tearing down ESF client (unsubscribe + delete)...\n");
+        es_unsubscribe_all(g_client);
+        es_delete_client(g_client);
+        g_client = NULL;
+        logg(LOGG_INFO, "ClamESF: ESF client destroyed.\n");
+    }
+
+    if (g_async_scan_queue) {
+        /* Barrier ensures all queued blocks complete before release */
+        dispatch_barrier_sync(g_async_scan_queue, ^{});
+        dispatch_release(g_async_scan_queue);
+        g_async_scan_queue = NULL;
+    }
 }
 
 int onas_esf_eloop(struct onas_context **ctx)

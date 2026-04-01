@@ -94,6 +94,35 @@ onas_cache_result_t onas_cache_lookup(dev_t dev, ino_t ino, time_t mtime, off_t 
     return result;
 }
 
+onas_cache_result_t onas_cache_lookup_nonblocking(dev_t dev, ino_t ino,
+                                                   time_t mtime, off_t size)
+{
+    unsigned int slot  = cache_hash(dev, ino, mtime, size);
+    unsigned int shard = shard_for_slot(slot);
+    onas_cache_result_t result = ONAS_CACHE_MISS;
+
+    if (pthread_mutex_trylock(&g_shard_locks[shard]) != 0)
+        return ONAS_CACHE_MISS; /* contended — treat as miss */
+
+    struct cache_entry *e = &g_cache[slot];
+    if (e->occupied &&
+        e->dev == dev && e->ino == ino &&
+        e->mtime == mtime && e->size == size) {
+
+        time_t now = time(NULL);
+        if ((now - e->insert_time) < CACHE_TTL_SEC) {
+            result = (e->verdict == ONAS_VERDICT_INFECTED)
+                         ? ONAS_CACHE_HIT_INFECTED
+                         : ONAS_CACHE_HIT_CLEAN;
+        } else {
+            e->occupied = 0;
+        }
+    }
+
+    pthread_mutex_unlock(&g_shard_locks[shard]);
+    return result;
+}
+
 void onas_cache_insert(dev_t dev, ino_t ino, time_t mtime, off_t size, onas_verdict_t verdict)
 {
     unsigned int slot  = cache_hash(dev, ino, mtime, size);
