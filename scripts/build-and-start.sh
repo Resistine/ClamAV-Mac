@@ -144,7 +144,7 @@ TCPAddr 127.0.0.1
 MaxThreads 4
 OnAccessIncludePath /Users
 OnAccessExcludePath /Users/Shared
-OnAccessPrevention yes
+OnAccessPrevention no
 CONF
     echo "   ✓ Created clamd.conf"
 else
