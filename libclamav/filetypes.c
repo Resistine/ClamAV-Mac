@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2013-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+ *  Copyright (C) 2013-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
  *  Copyright (C) 2007-2013 Sourcefire, Inc.
  *
  *  Authors: Tomasz Kojm
@@ -143,6 +143,7 @@ static const struct ftmap_s {
     { "CL_TYPE_PYTHON_COMPILED",    CL_TYPE_PYTHON_COMPILED },
     { "CL_TYPE_LHA_LZH",            CL_TYPE_LHA_LZH         },
     { "CL_TYPE_AI_MODEL",           CL_TYPE_AI_MODEL        },
+    { "CL_TYPE_ZSTD",               CL_TYPE_ZSTD            },
     { NULL,                         CL_TYPE_IGNORED         }
 };
 // clang-format on

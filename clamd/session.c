@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2013-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+ *  Copyright (C) 2013-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
  *  Copyright (C) 2007-2013 Sourcefire, Inc.
  *
  *  Authors: Tomasz Kojm, Török Edvin
@@ -83,6 +83,7 @@ static struct {
     {CMD1, sizeof(CMD1) - 1, COMMAND_SCAN, 1, 1, 0},
     {CMD3, sizeof(CMD3) - 1, COMMAND_SHUTDOWN, 0, 1, 0},
     {CMD4, sizeof(CMD4) - 1, COMMAND_RELOAD, 0, 1, 0},
+    {CMD25, sizeof(CMD25) - 1, COMMAND_SELFCHECK, 0, 1, 0},
     {CMD5, sizeof(CMD5) - 1, COMMAND_PING, 0, 1, 0},
     {CMD6, sizeof(CMD6) - 1, COMMAND_CONTSCAN, 1, 1, 0},
     /* must be before VERSION, because they share common prefix! */
@@ -277,20 +278,28 @@ int command(client_conn_t *conn, int *virus)
             }
             break;
         }
-        case COMMAND_MULTISCANFILE:
+        case COMMAND_MULTISCANFILE: {
+            char *scan_filename    = conn->filename;
+            char *display_filename = (NULL != conn->display_filename) ? conn->display_filename : conn->filename;
+
             thrmgr_setactivetask(NULL, "MULTISCANFILE");
             scandata.group    = NULL;
             scandata.type     = TYPE_SCAN;
             scandata.thr_pool = NULL;
             /* TODO: check ret value */
-            ret            = scan_callback(NULL, conn->filename, conn->filename, visit_file, &data); /* callback freed it */
-            conn->filename = NULL;
-            *virus         = scandata.infected;
+            ret = scan_callback(NULL, display_filename, scan_filename, visit_file, &data); /* callback freed display_filename */
+            if (scan_filename != display_filename) {
+                free(scan_filename);
+            }
+            conn->filename         = NULL;
+            conn->display_filename = NULL;
+            *virus                 = scandata.infected;
             if (ret == CL_BREAK) {
                 thrmgr_group_terminate(conn->group);
                 return 1;
             }
             return scandata.errors > 0 ? scandata.errors : 0;
+        }
         case COMMAND_FILDES:
             thrmgr_setactivetask(NULL, "FILDES");
 #ifdef HAVE_FD_PASSING
@@ -570,6 +579,31 @@ int execute_or_dispatch_command(client_conn_t *conn, enum commands cmd, const ch
                 conn_reply_single(conn, NULL, "COMMAND UNAVAILABLE");
             }
             return 1;
+        case COMMAND_SELFCHECK:
+            if (optget(conn->opts, "EnableSelfCheckCommand")->enabled) {
+                int reload_flag;
+                int db_reload_needed;
+                pthread_mutex_lock(&reload_mutex);
+                reload_flag = reload;
+                pthread_mutex_unlock(&reload_mutex);
+                if (reload_flag) {
+                    mdprintf(desc, "RELOADING%c", term);
+                    return 1;
+                }
+                db_reload_needed = need_db_reload();
+                if (db_reload_needed) {
+                    pthread_mutex_lock(&reload_mutex);
+                    reload = 1;
+                    pthread_mutex_unlock(&reload_mutex);
+                    mdprintf(desc, "RELOADING%c", term);
+                    return 1;
+                }
+                mdprintf(desc, "DBUPTODATE%c", term);
+                return 1;
+            } else {
+                conn_reply_single(conn, NULL, "COMMAND UNAVAILABLE");
+                return 1;
+            }
         case COMMAND_PING:
             if (conn->group)
                 mdprintf(desc, "%u: PONG%c", conn->id, term);

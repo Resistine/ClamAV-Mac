@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2013-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+ *  Copyright (C) 2013-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
  *  Copyright (C) 2007-2013 Sourcefire, Inc.
  *
  *  Authors: Tomasz Kojm, Trog
@@ -75,7 +75,6 @@
 #include "bytecode_api_impl.h"
 #include "cache.h"
 #include "readdb.h"
-#include "stats.h"
 #include "json_api.h"
 #include "mpool.h"
 
@@ -473,7 +472,6 @@ struct cl_engine *cl_engine_new(void)
     cl_error_t status = CL_ERROR;
 
     struct cl_engine *new = NULL;
-    cli_intel_t *intel    = NULL;
     char *cvdcertsdir     = NULL;
 
     new = (struct cl_engine *)calloc(1, sizeof(struct cl_engine));
@@ -544,33 +542,6 @@ struct cl_engine *cl_engine_new(void)
         cli_errmsg("cl_engine_new: Can't initialize root certificates\n");
         goto done;
     }
-
-    /* Set up default stats/intel gathering callbacks */
-    intel = calloc(1, sizeof(cli_intel_t));
-    if ((intel)) {
-#ifdef CL_THREAD_SAFE
-        if (pthread_mutex_init(&(intel->mutex), NULL)) {
-            cli_errmsg("cli_engine_new: Cannot initialize stats gathering mutex\n");
-            goto done;
-        }
-#endif
-        intel->engine     = new;
-        intel->maxsamples = STATS_MAX_SAMPLES;
-        intel->maxmem     = STATS_MAX_MEM;
-        intel->timeout    = 10;
-        new->stats_data   = intel;
-    } else {
-        new->stats_data = NULL;
-    }
-
-    new->cb_stats_add_sample      = NULL;
-    new->cb_stats_submit          = NULL;
-    new->cb_stats_flush           = clamav_stats_flush;
-    new->cb_stats_remove_sample   = clamav_stats_remove_sample;
-    new->cb_stats_decrement_count = clamav_stats_decrement_count;
-    new->cb_stats_get_num         = clamav_stats_get_num;
-    new->cb_stats_get_size        = clamav_stats_get_size;
-    new->cb_stats_get_hostid      = clamav_stats_get_hostid;
 
     /* Setup raw disk image max settings */
     new->maxpartitions = CLI_DEFAULT_MAXPARTITIONS;
@@ -650,9 +621,6 @@ done:
             }
             free(new);
             new = NULL;
-        }
-        if (NULL != intel) {
-            free(intel);
         }
     }
 
@@ -811,20 +779,6 @@ cl_error_t cl_engine_set_num(struct cl_engine *engine, enum cl_engine_field fiel
                 engine->cache_size = (uint32_t)num;
             }
             break;
-        case CL_ENGINE_DISABLE_PE_STATS:
-            if (num) {
-                engine->engine_options |= ENGINE_OPTIONS_DISABLE_PE_STATS;
-            } else {
-                engine->engine_options &= ~(ENGINE_OPTIONS_DISABLE_PE_STATS);
-            }
-            break;
-        case CL_ENGINE_STATS_TIMEOUT:
-            if ((engine->stats_data)) {
-                cli_intel_t *intel = (cli_intel_t *)(engine->stats_data);
-
-                intel->timeout = (uint32_t)num;
-            }
-            break;
         case CL_ENGINE_MAX_PARTITIONS:
             engine->maxpartitions = (uint32_t)num;
             break;
@@ -938,8 +892,6 @@ long long cl_engine_get_num(const struct cl_engine *engine, enum cl_engine_field
             return engine->engine_options & ENGINE_OPTIONS_DISABLE_CACHE;
         case CL_ENGINE_CACHE_SIZE:
             return engine->cache_size;
-        case CL_ENGINE_STATS_TIMEOUT:
-            return ((cli_intel_t *)(engine->stats_data))->timeout;
         case CL_ENGINE_MAX_PARTITIONS:
             return engine->maxpartitions;
         case CL_ENGINE_MAX_ICONSPE:
@@ -1081,15 +1033,6 @@ struct cl_settings *cl_engine_settings_copy(const struct cl_engine *engine)
     settings->engine_options                 = engine->engine_options;
     settings->cache_size                     = engine->cache_size;
 
-    settings->cb_stats_add_sample      = engine->cb_stats_add_sample;
-    settings->cb_stats_remove_sample   = engine->cb_stats_remove_sample;
-    settings->cb_stats_decrement_count = engine->cb_stats_decrement_count;
-    settings->cb_stats_submit          = engine->cb_stats_submit;
-    settings->cb_stats_flush           = engine->cb_stats_flush;
-    settings->cb_stats_get_num         = engine->cb_stats_get_num;
-    settings->cb_stats_get_size        = engine->cb_stats_get_size;
-    settings->cb_stats_get_hostid      = engine->cb_stats_get_hostid;
-
     settings->maxpartitions = engine->maxpartitions;
 
     settings->maxiconspe = engine->maxiconspe;
@@ -1161,15 +1104,6 @@ cl_error_t cl_engine_settings_apply(struct cl_engine *engine, const struct cl_se
     engine->cb_hash                        = settings->cb_hash;
     engine->cb_meta                        = settings->cb_meta;
     engine->cb_file_props                  = settings->cb_file_props;
-
-    engine->cb_stats_add_sample      = settings->cb_stats_add_sample;
-    engine->cb_stats_remove_sample   = settings->cb_stats_remove_sample;
-    engine->cb_stats_decrement_count = settings->cb_stats_decrement_count;
-    engine->cb_stats_submit          = settings->cb_stats_submit;
-    engine->cb_stats_flush           = settings->cb_stats_flush;
-    engine->cb_stats_get_num         = settings->cb_stats_get_num;
-    engine->cb_stats_get_size        = settings->cb_stats_get_size;
-    engine->cb_stats_get_hostid      = settings->cb_stats_get_hostid;
 
     engine->maxpartitions = settings->maxpartitions;
 
@@ -1766,9 +1700,16 @@ cl_error_t cli_recursion_stack_push(cli_ctx *ctx, cl_fmap_t *map, cli_file_t typ
 
     cli_scan_layer_t *current_layer = NULL;
     cli_scan_layer_t *new_layer     = NULL;
+    uint32_t old_recursion_level    = 0;
 
     char *new_temp_path = NULL;
     char *fmap_basename = NULL;
+
+#ifdef _WIN32
+    FFIError *mkdir_w32_error = NULL;
+#endif
+
+    old_recursion_level = ctx->recursion_level;
 
     // Check the regular limits
     if (CL_SUCCESS != (status = cli_checklimits("cli_recursion_stack_push", ctx, map->len, 0, 0))) {
@@ -1866,11 +1807,21 @@ cl_error_t cli_recursion_stack_push(cli_ctx *ctx, cl_fmap_t *map, cli_file_t typ
             }
         }
 
-        if (mkdir(new_temp_path, 0700)) {
-            cli_errmsg("cli_magic_scan: Can't create tmp sub-directory for scan: %s.\n", new_temp_path);
+#ifdef _WIN32
+
+        if (!mkdir_w32(new_temp_path, &mkdir_w32_error)) {
+            cli_errmsg("cli_magic_scan: Can't create tmp sub-directory (%s) for scan. Error: %s\n", new_temp_path, ffierror_fmt(mkdir_w32_error));
+            ffierror_free(mkdir_w32_error);
             status = CL_EACCES;
             goto done;
         }
+#else
+        if (mkdir(new_temp_path, 0700)) {
+            cli_errmsg("cli_magic_scan: Can't create tmp sub-directory (%s) for scan. Error: %s\n", new_temp_path, strerror(errno));
+            status = CL_EACCES;
+            goto done;
+        }
+#endif
 
         ctx->recursion_stack[ctx->recursion_level].tmpdir = new_temp_path;
         ctx->this_layer_tmpdir                            = new_temp_path;
@@ -1995,6 +1946,18 @@ cl_error_t cli_recursion_stack_push(cli_ctx *ctx, cl_fmap_t *map, cli_file_t typ
     }
 
 done:
+
+    if (CL_SUCCESS != status) {
+        // The push failed, so roll back the recursion level change.
+        ctx->recursion_level = old_recursion_level;
+
+        ctx->this_layer_tmpdir = ctx->recursion_stack[ctx->recursion_level].tmpdir;
+        ctx->fmap              = ctx->recursion_stack[ctx->recursion_level].fmap;
+
+        if (SCAN_COLLECT_METADATA) {
+            ctx->this_layer_metadata_json = ctx->recursion_stack[ctx->recursion_level].metadata_json;
+        }
+    }
 
     if (new_temp_path) {
         free(new_temp_path);

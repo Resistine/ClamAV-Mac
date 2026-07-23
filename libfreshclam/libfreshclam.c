@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2013-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+ *  Copyright (C) 2013-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
  *  Copyright (C) 2007-2013 Sourcefire, Inc.
  *  Copyright (C) 2002-2007 Tomasz Kojm <tkojm@clamav.net>
  *
@@ -462,6 +462,11 @@ int version_string_compare(char *v1, size_t v1_len, char *v2, size_t v2_len)
 
 fc_error_t fc_test_database(const char *dbFilename, int bBytecodeEnabled)
 {
+    return fc_test_database_ex(dbFilename, bBytecodeEnabled, NULL);
+}
+
+fc_error_t fc_test_database_ex(const char *dbFilename, int bBytecodeEnabled, char *certsDirectory)
+{
     fc_error_t status        = FC_EARG;
     struct cl_engine *engine = NULL;
     unsigned newsigs         = 0;
@@ -483,7 +488,11 @@ fc_error_t fc_test_database(const char *dbFilename, int bBytecodeEnabled)
     // having cache will only waste time and memory.
     engine->engine_options |= ENGINE_OPTIONS_DISABLE_CACHE;
 
-    cl_engine_set_clcb_stats_submit(engine, NULL);
+    if ((cl_ret = cl_engine_set_str(engine, CL_ENGINE_CVDCERTSDIR, certsDirectory))) {
+        logg(LOGG_ERROR, "Failed to set certs directory when testing database: %s\n", cl_strerror(cl_ret));
+        status = FC_ETESTFAIL;
+        goto done;
+    }
 
     dboptions = CL_DB_PHISHING | CL_DB_PHISHING_URLS | CL_DB_BYTECODE | CL_DB_PUA | CL_DB_ENHANCED;
     if (g_bFipsLimits) {
@@ -515,8 +524,8 @@ fc_error_t fc_test_database(const char *dbFilename, int bBytecodeEnabled)
 done:
 
     if (NULL != engine) {
-        if (engine->domain_list_matcher && engine->domain_list_matcher->sha2_256_pfx_set.keys)
-            cli_hashset_destroy(&engine->domain_list_matcher->sha2_256_pfx_set);
+        if (engine->phish_protected_domain_matcher && engine->phish_protected_domain_matcher->sha2_256_pfx_set.keys)
+            cli_hashset_destroy(&engine->phish_protected_domain_matcher->sha2_256_pfx_set);
 
         cl_engine_free(engine);
     }

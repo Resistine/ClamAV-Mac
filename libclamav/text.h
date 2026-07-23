@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2013-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+ *  Copyright (C) 2013-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
  *  Copyright (C) 2007-2013 Sourcefire, Inc.
  *
  *  Authors: Nigel Horne
@@ -54,7 +54,9 @@ typedef struct text {
 #include "message.h"
 
 void textDestroy(text *t_head);
+text *textAddMessageWithStatus(text *aText, message *aMessage, int *status);
 text *textAddMessage(text *aText, message *aMessage);
+text *textMoveWithStatus(text *t_head, text *t, int *status);
 text *textMove(text *t_head, text *t);
 blob *textToBlob(text *t, blob *b, int destroy);
 fileblob *textToFileblob(text *t, fileblob *fb, int destroy);

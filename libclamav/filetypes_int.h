@@ -1,7 +1,7 @@
 /*
  *  Static filetype data for use when daily.ftm is not available.
  *
- *  Copyright (C) 2013-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+ *  Copyright (C) 2013-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
  *  Copyright (C) 2007-2013 Sourcefire, Inc.
  *
  *  Authors: Tomasz Kojm
@@ -90,23 +90,23 @@ static const char *ftypes_int[] = {
     "1:*:3c48544d4c3e:HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
     "1:*:3c486561643e:HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
     "1:*:3c48746d6c3e:HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
-    "1:*:3c494652414d45:HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
-    "1:*:3c494d47:HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
-    "1:*:3c496d67:HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
-    "1:*:3c4f424a454354:HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
-    "1:*:3c4f626a656374:HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
-    "1:*:3c534352495054:HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
-    "1:*:3c536372697074:HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
-    "1:*:3c5441424c45:HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
+    "1:*:3c494652414d45(3e|20|09|0a|0b|0c|0d|2f):HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
+    "1:*:3c494d47(3e|20|09|0a|0b|0c|0d|2f):HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
+    "1:*:3c496d67(3e|20|09|0a|0b|0c|0d|2f):HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
+    "1:*:3c4f424a454354(3e|20|09|0a|0b|0c|0d|2f):HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
+    "1:*:3c4f626a656374(3e|20|09|0a|0b|0c|0d|2f):HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
+    "1:*:3c534352495054(3e|20|09|0a|0b|0c|0d|2f):HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
+    "1:*:3c536372697074(3e|20|09|0a|0b|0c|0d|2f):HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
+    "1:*:3c5441424c45(3e|20|09|0a|0b|0c|0d|2f):HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
     "1:*:3c6120*(68|48)(72|52)4546:HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
     "1:*:3c6120*(68|48)(72|52)6566:HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
     "1:*:3c686561643e:HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
     "1:*:3c68746d6c3e:HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
-    "1:*:3c696672616d65:HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
-    "1:*:3c696d67:HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
-    "1:*:3c6f626a656374:HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
-    "1:*:3c736372697074:HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
-    "1:*:3c7461626c65:HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
+    "1:*:3c696672616d65(3e|20|09|0a|0b|0c|0d|2f):HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
+    "1:*:3c696d67(3e|20|09|0a|0b|0c|0d|2f):HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
+    "1:*:3c6f626a656374(3e|20|09|0a|0b|0c|0d|2f):HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
+    "1:*:3c736372697074(3e|20|09|0a|0b|0c|0d|2f):HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
+    "1:*:3c7461626c65(3e|20|09|0a|0b|0c|0d|2f):HTML data:CL_TYPE_ANY:CL_TYPE_HTML",
     "1:*:4d5a{60-300}50450000:PE:CL_TYPE_ANY:CL_TYPE_MSEXE",
     "1:*:504b0304:ZIP-SFX:CL_TYPE_ANY:CL_TYPE_ZIPSFX",
     "1:*:526172211a0700:RAR-SFX:CL_TYPE_ANY:CL_TYPE_RARSFX",
@@ -163,6 +163,8 @@ static const char *ftypes_int[] = {
     "0:0:78617221:XAR container file:CL_TYPE_ANY:CL_TYPE_XAR:75",
     "1:EOF-512:6b6f6c79:DMG container file:CL_TYPE_ANY:CL_TYPE_DMG:75",
     "0:0:fd377a585a00:XZ container file:CL_TYPE_ANY:CL_TYPE_XZ:76",
+    "0:0:28b52ffd:Zstandard compressed file:CL_TYPE_ANY:CL_TYPE_ZSTD:76",
+    "1:0:5?2a4d18:Zstandard skippable frame:CL_TYPE_ANY:CL_TYPE_ZSTD:76",
     "4:1024:482B0004:HFS+ partition:CL_TYPE_PART_ANY:CL_TYPE_PART_HFSPLUS:75",
     "4:1024:48580005:HFSX partition:CL_TYPE_PART_ANY:CL_TYPE_PART_HFSPLUS:75",
     "1:0:3c3f786d6c2076657273696f6e3d22312e3022{0-1024}3c576f726b626f6f6b:Microsoft Excel 2003 XML Document:CL_TYPE_ANY:CL_TYPE_XML_XL:80",

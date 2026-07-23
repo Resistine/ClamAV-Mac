@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2013-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+ *  Copyright (C) 2013-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
  *  Copyright (C) 2007-2013 Sourcefire, Inc.
  *  Copyright (C) 2002-2007 Tomasz Kojm <tkojm@clamav.net>
  *
@@ -148,6 +148,20 @@ fc_error_t fc_prune_database_directory(
 fc_error_t fc_test_database(
     const char *dbFilename,
     int bBytecodeEnabled);
+
+/**
+ * @brief Test if database loads without errors, with option to set certs directory.
+ *
+ * @param dbFilename       Filename of database.
+ * @param bBytecodeEnabled Non-zero if database has bytecode signatures, and should be tested.
+ * @param certsDirectory   (optional) Directory containing CA certificates to verify digital signatures.
+ * @return fc_error_t      FC_SUCCESS if loaded correctly.
+ * @return fc_error_t      FC_EARG callback was passed invalid arguments.
+ */
+fc_error_t fc_test_database_ex(
+    const char *dbFilename,
+    int bBytecodeEnabled,
+    char *certsDirectory);
 
 /**
  * @brief Query Update Info via DNS to get database version info, and ClamAV version info.

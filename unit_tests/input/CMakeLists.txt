@@ -1,4 +1,4 @@
-# Copyright (C) 2020-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+# Copyright (C) 2020-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
 
 #
 # Assemble xor'ed test files that might otherwise be detected by:
@@ -29,6 +29,13 @@ set(ENCRYPTED_TESTFILES
     clamav_hdb_scanfiles/clam.mail
     clamav_hdb_scanfiles/clam.ppt
     clamav_hdb_scanfiles/clam.tnef
+    clamav_hdb_scanfiles/clam.mail-multiple-content-type.eml
+    clamav_hdb_scanfiles/clam.mail-comment-header-name.eml
+    clamav_hdb_scanfiles/clam.mail-multiple-boundaries.eml
+    clamav_hdb_scanfiles/clam.mail-boundary-content-disposition.eml
+    clamav_hdb_scanfiles/clam.mail-semicolon-boundary.eml
+    clamav_hdb_scanfiles/clam.mail-nested-comment-header-name.eml
+    clamav_hdb_scanfiles/clam.mail-disposition-rfc2231-boundary.eml
     clamav_hdb_scanfiles/clam.ea05.exe
     clamav_hdb_scanfiles/clam.ea06.exe
     clamav_hdb_scanfiles/clam.d64.zip

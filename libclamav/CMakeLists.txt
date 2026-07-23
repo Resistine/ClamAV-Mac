@@ -1,4 +1,4 @@
-# Copyright (C) 2020-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+# Copyright (C) 2020-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
 
 include_directories(
     ${LIBXML2_INCLUDE_DIR}
@@ -218,7 +218,6 @@ set(LIBCLAMAV_SOURCES
     table.c             table.h
     text.c              text.h
     uniq.c              uniq.h
-    www.c               www.h
     # Utils Disasm
     disasm-common.h     disasm.c    disasm.h    disasmpriv.h
     # Matcher
@@ -260,10 +259,6 @@ set(LIBCLAMAV_SOURCES
     # heuristics (hardcoded exploit/malware detection)
     partition_intersection.c partition_intersection.h
     special.c           special.h
-    # clamav statistics
-    hostid_internal.c   hostid_internal.h
-    stats_json.c        stats_json.h
-    stats.c             stats.h
     # clamav bytecode support
     bcfeatures.h
     builtin_bytecodes.h
@@ -352,14 +347,14 @@ set(LIBCLAMAV_SOURCES
     # mail & phishing
     iana_cctld.h
     iana_tld.h
-    line.c              line.h
-    mbox.c              mbox.h
-    message.c           message.h
-    phish_domaincheck_db.c phish_domaincheck_db.h
-    phish_allow_list.c  phish_allow_list.h
-    phishcheck.c        phishcheck.h
-    regex_list.c        regex_list.h
-    regex_suffix.c      regex_suffix.h
+    line.c                          line.h
+    mbox.c                          mbox.h
+    message.c                       message.h
+    phish_domaincheck_db.c          phish_domaincheck_db.h
+    phish_allow_list.c              phish_allow_list.h
+    phishcheck.c                    phishcheck.h
+    regex_list.c                    regex_list.h
+    regex_suffix.c                  regex_suffix.h
     # sis
     sis.c               sis.h
     # tnef

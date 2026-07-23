@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2013-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+ *  Copyright (C) 2013-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
  *  Copyright (C) 2007-2013 Sourcefire, Inc.
  *
  *  Authors: Nigel Horne
@@ -64,6 +64,7 @@ const char *messageGetDispositionType(const message *m);
 void messageAddArgument(message *m, const char *arg);
 void messageAddArguments(message *m, const char *arg);
 char *messageFindArgument(const message *m, const char *variable);
+char *messageFindArgumentLast(const message *m, const char *variable);
 char *messageGetFilename(const message *m);
 int messageHasFilename(const message *m);
 void messageSetEncoding(message *m, const char *enctype);

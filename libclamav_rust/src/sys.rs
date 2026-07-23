@@ -100,19 +100,6 @@ pub const bytecode_mode_CL_BYTECODE_MODE_TEST: bytecode_mode = 3;
 #[doc = " both JIT and interpreter, compare results, all failures are fatal"]
 pub const bytecode_mode_CL_BYTECODE_MODE_OFF: bytecode_mode = 4;
 pub type bytecode_mode = ::std::os::raw::c_uint;
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct cli_section_hash {
-    pub md5: [::std::os::raw::c_uchar; 16usize],
-    pub len: usize,
-}
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct cli_stats_sections {
-    pub nsections: usize,
-    pub sections: *mut cli_section_hash,
-}
-pub type stats_section_t = cli_stats_sections;
 pub type cl_fmap_t = cl_fmap;
 #[doc = " @brief Read callback function type.\n\n A callback function pointer type for reading data from a cl_fmap_t that uses\n reads data from a handle interface.\n\n Read 'count' bytes starting at 'offset' into the buffer 'buf'\n\n Thread safety: It is guaranteed that only one callback is executing for a\n specific handle at any time, but there might be multiple callbacks executing\n for different handle at the same time.\n\n @param handle    The handle passed to cl_fmap_open_handle, its meaning is up\n                  to the callback's implementation\n @param buf       A buffer to read data into, must be at least offset + count\n                  bytes in size.\n @param count     The number of bytes to read.\n @param offset    The offset into buf to read the data to. If successful,\n                  the number of bytes actually read is returned. Upon reading\n                  end-of-file, zero is returned. Otherwise, a -1 is returned\n                  and the global variable errno is set to indicate the error."]
 pub type clcb_pread = ::std::option::Option<
@@ -239,52 +226,6 @@ pub type clcb_generic_data = ::std::option::Option<
         cbdata: *mut ::std::os::raw::c_void,
     ) -> ::std::os::raw::c_int,
 >;
-#[doc = " @brief Add sample metadata to the statistics for a sample that matched on a signature.\n\n @param virname   Name of the signature that matched.\n @param md5       Sample hash.\n @param size      Sample size.\n @param sections  PE section data, if applicable.\n @param cbdata    The statistics data. Probably a pointer to a malloc'd struct."]
-pub type clcb_stats_add_sample = ::std::option::Option<
-    unsafe extern "C" fn(
-        virname: *const ::std::os::raw::c_char,
-        md5: *const ::std::os::raw::c_uchar,
-        size: usize,
-        sections: *mut stats_section_t,
-        cbdata: *mut ::std::os::raw::c_void,
-    ),
->;
-#[doc = " @brief Remove a specific sample from the statistics report.\n\n @param virname   Name of the signature that matched.\n @param md5       Sample hash.\n @param size      Sample size.\n @param cbdata    The statistics data. Probably a pointer to a malloc'd struct."]
-pub type clcb_stats_remove_sample = ::std::option::Option<
-    unsafe extern "C" fn(
-        virname: *const ::std::os::raw::c_char,
-        md5: *const ::std::os::raw::c_uchar,
-        size: usize,
-        cbdata: *mut ::std::os::raw::c_void,
-    ),
->;
-#[doc = " @brief Decrement the hit count listed in the statistics report for a specific sample.\n\n @param virname   Name of the signature that matched.\n @param md5       Sample hash.\n @param size      Sample size.\n @param cbdata    The statistics data. Probably a pointer to a malloc'd struct."]
-pub type clcb_stats_decrement_count = ::std::option::Option<
-    unsafe extern "C" fn(
-        virname: *const ::std::os::raw::c_char,
-        md5: *const ::std::os::raw::c_uchar,
-        size: usize,
-        cbdata: *mut ::std::os::raw::c_void,
-    ),
->;
-#[doc = " @brief Function to submit a statistics report.\n\n @param engine    The initialized scanning engine.\n @param cbdata    The statistics data. Probably a pointer to a malloc'd struct."]
-pub type clcb_stats_submit = ::std::option::Option<
-    unsafe extern "C" fn(engine: *mut cl_engine, cbdata: *mut ::std::os::raw::c_void),
->;
-#[doc = " @brief Function to flush/free the statistics report data.\n\n @param engine    The initialized scanning engine.\n @param cbdata    The statistics data. Probably a pointer to a malloc'd struct."]
-pub type clcb_stats_flush = ::std::option::Option<
-    unsafe extern "C" fn(engine: *mut cl_engine, cbdata: *mut ::std::os::raw::c_void),
->;
-#[doc = " @brief Function to get the number of samples listed in the statistics report.\n\n @param cbdata    The statistics data. Probably a pointer to a malloc'd struct."]
-pub type clcb_stats_get_num =
-    ::std::option::Option<unsafe extern "C" fn(cbdata: *mut ::std::os::raw::c_void) -> usize>;
-#[doc = " @brief Function to get the size of memory used to store the statistics report.\n\n @param cbdata    The statistics data. Probably a pointer to a malloc'd struct."]
-pub type clcb_stats_get_size =
-    ::std::option::Option<unsafe extern "C" fn(cbdata: *mut ::std::os::raw::c_void) -> usize>;
-#[doc = " @brief Function to get the machine's unique host ID.\n\n @param cbdata    The statistics data. Probably a pointer to a malloc'd struct."]
-pub type clcb_stats_get_hostid = ::std::option::Option<
-    unsafe extern "C" fn(cbdata: *mut ::std::os::raw::c_void) -> *mut ::std::os::raw::c_char,
->;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct cl_cvd {
@@ -369,36 +310,37 @@ pub const cli_file_CL_TYPE_ONENOTE: cli_file = 554;
 pub const cli_file_CL_TYPE_PYTHON_COMPILED: cli_file = 555;
 pub const cli_file_CL_TYPE_LHA_LZH: cli_file = 556;
 pub const cli_file_CL_TYPE_AI_MODEL: cli_file = 557;
-pub const cli_file_CL_TYPE_PART_ANY: cli_file = 558;
-pub const cli_file_CL_TYPE_PART_HFSPLUS: cli_file = 559;
-pub const cli_file_CL_TYPE_MBR: cli_file = 560;
-pub const cli_file_CL_TYPE_HTML: cli_file = 561;
-pub const cli_file_CL_TYPE_MAIL: cli_file = 562;
-pub const cli_file_CL_TYPE_SFX: cli_file = 563;
-pub const cli_file_CL_TYPE_ZIPSFX: cli_file = 564;
-pub const cli_file_CL_TYPE_RARSFX: cli_file = 565;
-pub const cli_file_CL_TYPE_7ZSFX: cli_file = 566;
-pub const cli_file_CL_TYPE_CABSFX: cli_file = 567;
-pub const cli_file_CL_TYPE_ARJSFX: cli_file = 568;
-pub const cli_file_CL_TYPE_EGGSFX: cli_file = 569;
-pub const cli_file_CL_TYPE_NULSFT: cli_file = 570;
-pub const cli_file_CL_TYPE_AUTOIT: cli_file = 571;
-pub const cli_file_CL_TYPE_ISHIELD_MSI: cli_file = 572;
-pub const cli_file_CL_TYPE_ISO9660: cli_file = 573;
-pub const cli_file_CL_TYPE_DMG: cli_file = 574;
-pub const cli_file_CL_TYPE_GPT: cli_file = 575;
-pub const cli_file_CL_TYPE_APM: cli_file = 576;
-pub const cli_file_CL_TYPE_XDP: cli_file = 577;
-pub const cli_file_CL_TYPE_XML_WORD: cli_file = 578;
-pub const cli_file_CL_TYPE_XML_XL: cli_file = 579;
-pub const cli_file_CL_TYPE_XML_HWP: cli_file = 580;
-pub const cli_file_CL_TYPE_HWPOLE2: cli_file = 581;
-pub const cli_file_CL_TYPE_MHTML: cli_file = 582;
-pub const cli_file_CL_TYPE_LNK: cli_file = 583;
-pub const cli_file_CL_TYPE_UDF: cli_file = 584;
-pub const cli_file_CL_TYPE_ALZ: cli_file = 585;
-pub const cli_file_CL_TYPE_OTHER: cli_file = 586;
-pub const cli_file_CL_TYPE_IGNORED: cli_file = 587;
+pub const cli_file_CL_TYPE_ZSTD: cli_file = 558;
+pub const cli_file_CL_TYPE_PART_ANY: cli_file = 559;
+pub const cli_file_CL_TYPE_PART_HFSPLUS: cli_file = 560;
+pub const cli_file_CL_TYPE_MBR: cli_file = 561;
+pub const cli_file_CL_TYPE_HTML: cli_file = 562;
+pub const cli_file_CL_TYPE_MAIL: cli_file = 563;
+pub const cli_file_CL_TYPE_SFX: cli_file = 564;
+pub const cli_file_CL_TYPE_ZIPSFX: cli_file = 565;
+pub const cli_file_CL_TYPE_RARSFX: cli_file = 566;
+pub const cli_file_CL_TYPE_7ZSFX: cli_file = 567;
+pub const cli_file_CL_TYPE_CABSFX: cli_file = 568;
+pub const cli_file_CL_TYPE_ARJSFX: cli_file = 569;
+pub const cli_file_CL_TYPE_EGGSFX: cli_file = 570;
+pub const cli_file_CL_TYPE_NULSFT: cli_file = 571;
+pub const cli_file_CL_TYPE_AUTOIT: cli_file = 572;
+pub const cli_file_CL_TYPE_ISHIELD_MSI: cli_file = 573;
+pub const cli_file_CL_TYPE_ISO9660: cli_file = 574;
+pub const cli_file_CL_TYPE_DMG: cli_file = 575;
+pub const cli_file_CL_TYPE_GPT: cli_file = 576;
+pub const cli_file_CL_TYPE_APM: cli_file = 577;
+pub const cli_file_CL_TYPE_XDP: cli_file = 578;
+pub const cli_file_CL_TYPE_XML_WORD: cli_file = 579;
+pub const cli_file_CL_TYPE_XML_XL: cli_file = 580;
+pub const cli_file_CL_TYPE_XML_HWP: cli_file = 581;
+pub const cli_file_CL_TYPE_HWPOLE2: cli_file = 582;
+pub const cli_file_CL_TYPE_MHTML: cli_file = 583;
+pub const cli_file_CL_TYPE_LNK: cli_file = 584;
+pub const cli_file_CL_TYPE_UDF: cli_file = 585;
+pub const cli_file_CL_TYPE_ALZ: cli_file = 586;
+pub const cli_file_CL_TYPE_OTHER: cli_file = 587;
+pub const cli_file_CL_TYPE_IGNORED: cli_file = 588;
 pub type cli_file = ::std::os::raw::c_uint;
 pub use self::cli_file as cli_file_t;
 #[repr(C)]
@@ -430,7 +372,6 @@ pub struct cli_dconf {
     pub other: u32,
     pub phishing: u32,
     pub bytecode: u32,
-    pub stats: u32,
     pub pcre: u32,
 }
 pub type fmap_t = cl_fmap_t;
@@ -784,8 +725,8 @@ pub struct cl_engine {
     pub hm_imp: *mut cli_matcher,
     pub hm_fp: *mut cli_matcher,
     pub cdb: *mut cli_cdb,
-    pub allow_list_matcher: *mut regex_matcher,
-    pub domain_list_matcher: *mut regex_matcher,
+    pub phish_allow_list_matcher: *mut regex_matcher,
+    pub phish_protected_domain_matcher: *mut regex_matcher,
     pub phishcheck: *mut phishcheck,
     pub dconf: *mut cli_dconf,
     pub ftypes: *mut cli_ftype,
@@ -834,15 +775,6 @@ pub struct cl_engine {
     pub maxhtmlnotags: u64,
     pub maxscriptnormalize: u64,
     pub maxziptypercg: u64,
-    pub stats_data: *mut ::std::os::raw::c_void,
-    pub cb_stats_add_sample: clcb_stats_add_sample,
-    pub cb_stats_remove_sample: clcb_stats_remove_sample,
-    pub cb_stats_decrement_count: clcb_stats_decrement_count,
-    pub cb_stats_submit: clcb_stats_submit,
-    pub cb_stats_flush: clcb_stats_flush,
-    pub cb_stats_get_num: clcb_stats_get_num,
-    pub cb_stats_get_size: clcb_stats_get_size,
-    pub cb_stats_get_hostid: clcb_stats_get_hostid,
     pub maxpartitions: u32,
     pub maxiconspe: u32,
     pub maxrechwp3: u32,
@@ -856,6 +788,12 @@ extern "C" {
         ctx: *mut cli_ctx,
         virname: *const ::std::os::raw::c_char,
     ) -> cl_error_t;
+}
+extern "C" {
+    pub fn cli_append_potentially_unwanted_if_heur_exceedsmax(
+        ctx: *mut cli_ctx,
+        vname: *mut ::std::os::raw::c_char,
+    );
 }
 extern "C" {
     pub fn cli_warnmsg(str_: *const ::std::os::raw::c_char, ...);

@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2013-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+ *  Copyright (C) 2013-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
  *  Copyright (C) 2009-2013 Sourcefire, Inc.
  *
  *  Author: aCaB
@@ -26,11 +26,15 @@
 #include "clamav-config.h"
 #endif
 
+#include <stdbool.h>
+
 #if HAVE_SYS_PARAM_H
 #include <sys/param.h>
 #endif
 
 #include "misc.h"
+
+struct action_source;
 
 enum {
     CONT,
@@ -59,9 +63,12 @@ int recvln(struct RCVLN *s, char **rbol, char **reol);
 
 int chkpath(const char *path, struct optstruct *clamdopts);
 #ifdef HAVE_FD_PASSING
+int send_fdpass_fd(int sockd, int fd);
 int send_fdpass(int sockd, const char *filename);
 #endif
+int send_stream_fd(int sockd, int fd, const char *display_filename, struct optstruct *clamdopts);
+int send_stream_fd_action(int sockd, int fd, const char *display_filename, struct optstruct *clamdopts);
 int send_stream(int sockd, const char *filename, struct optstruct *clamdopts);
 int dconnect(struct optstruct *clamdopts);
-int dsresult(int sockd, int scantype, const char *filename, int *printok, int *errors, struct optstruct *clamdopts);
+int dsresult(int sockd, int scantype, const char *filename, const struct action_source *action_source, bool apply_action, int *printok, int *errors, struct optstruct *clamdopts);
 #endif

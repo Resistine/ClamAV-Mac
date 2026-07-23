@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2013-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+ *  Copyright (C) 2013-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
  *  Copyright (C) 2007-2013 Sourcefire, Inc.
  *
  *  Authors: Tomasz Kojm
@@ -40,7 +40,6 @@ struct cli_dconf {
     uint32_t other;
     uint32_t phishing;
     uint32_t bytecode;
-    uint32_t stats;
     uint32_t pcre;
 };
 
@@ -99,6 +98,7 @@ struct cli_dconf {
 #define ARCH_CONF_UDF     0x8000000
 #define ARCH_CONF_LHA_LZH 0x10000000
 #define ARCH_CONF_ALZ     0x20000000
+#define ARCH_CONF_ZSTD    0x40000000
 
 /* Document flags */
 #define DOC_CONF_HTML         0x1
@@ -124,7 +124,6 @@ struct cli_dconf {
 #define OTHER_CONF_JPEG             0x8
 #define OTHER_CONF_CRYPTFF          0x10
 #define OTHER_CONF_DLP              0x20
-#define OTHER_CONF_MYDOOMLOG        0x40
 #define OTHER_CONF_PREFILTERING     0x80
 #define OTHER_CONF_PDFNAMEOBJ       0x100
 #define OTHER_CONF_PRTNINTXN        0x200
@@ -143,10 +142,6 @@ struct cli_dconf {
 #define BYTECODE_JIT_X86     0x2
 #define BYTECODE_JIT_PPC     0x4
 #define BYTECODE_JIT_ARM     0x8
-
-/* Stats/Intel flags */
-#define DCONF_STATS_DISABLED            0x1
-#define DCONF_STATS_PE_SECTION_DISABLED 0x2
 
 /* PCRE flags */
 #define PCRE_CONF_SUPPORT 0x1

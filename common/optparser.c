@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2013-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+ *  Copyright (C) 2013-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
  *  Copyright (C) 2008-2013 Sourcefire, Inc.
  *
  *  Author: Tomasz Kojm <tkojm@clamav.net>
@@ -321,6 +321,8 @@ const struct clam_option __clam_options[] = {
     {"EnableShutdownCommand", NULL, 0, CLOPT_TYPE_BOOL, MATCH_BOOL, 1, NULL, 0, OPT_CLAMD, "Enables the SHUTDOWN command for clamd", "no"},
 
     {"EnableReloadCommand", NULL, 0, CLOPT_TYPE_BOOL, MATCH_BOOL, 1, NULL, 0, OPT_CLAMD, "Enables the RELOAD command for clamd", "no"},
+
+    {"EnableSelfCheckCommand", NULL, 0, CLOPT_TYPE_BOOL, MATCH_BOOL, 1, NULL, 0, OPT_CLAMD, "Enables the SELFCHECK command for clamd", "no"},
 
     {"EnableVersionCommand", NULL, 0, CLOPT_TYPE_BOOL, MATCH_BOOL, 1, NULL, 0, OPT_CLAMD, "Enables the VERSION command for clamd", "yes"},
 

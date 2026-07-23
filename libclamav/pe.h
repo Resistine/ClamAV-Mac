@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2013-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+ *  Copyright (C) 2013-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
  *  Copyright (C) 2007-2013 Sourcefire, Inc.
  *
  *  Authors: Alberto Wu, Tomasz Kojm, Andrew Williams
@@ -91,7 +91,7 @@ cl_error_t cli_pe_targetinfo(cli_ctx *ctx, struct cli_exe_info *peinfo);
 cl_error_t cli_peheader(cli_ctx *ctx, struct cli_exe_info *peinfo, uint32_t opts);
 
 cl_error_t cli_check_auth_header(cli_ctx *ctx, struct cli_exe_info *peinfo);
-cl_error_t cli_genhash_pe(cli_ctx *ctx, unsigned int class, cli_hash_type_t type, stats_section_t *hashes);
+cl_error_t cli_genhash_pe(cli_ctx *ctx, unsigned int class, cli_hash_type_t type);
 
 uint32_t cli_rawaddr(uint32_t, const struct cli_exe_section *, uint16_t, unsigned int *, size_t, uint32_t);
 void findres(uint32_t, uint32_t, fmap_t *map, struct cli_exe_info *, int (*)(void *, uint32_t, uint32_t, uint32_t, uint32_t), void *);

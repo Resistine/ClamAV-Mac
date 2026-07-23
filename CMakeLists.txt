@@ -1,11 +1,8 @@
 
-# Copyright (C) 2019-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+# Copyright (C) 2019-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
 
-if(WIN32)
-    cmake_minimum_required( VERSION 3.16 ) # For file(GET_RUNTIME_DEPENDENCIES)
-else()
-    cmake_minimum_required( VERSION 3.14 )
-endif()
+# CMake 3.17 preserves link directories from private static dependencies.
+cmake_minimum_required( VERSION 3.17 )
 
 set(CMAKE_C_STANDARD 90)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -36,9 +33,9 @@ set(PACKAGE_URL       "https://www.clamav.net/")
 HexVersion(PACKAGE_VERSION_NUM ${PROJECT_VERSION_MAJOR} ${PROJECT_VERSION_MINOR} ${PROJECT_VERSION_PATCH})
 
 # libtool library versioning rules: http://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
-set(LIBCLAMAV_CURRENT  13)
+set(LIBCLAMAV_CURRENT  14)
 set(LIBCLAMAV_REVISION 0)
-set(LIBCLAMAV_AGE      1)
+set(LIBCLAMAV_AGE      0)
 
 math(EXPR LIBCLAMAV_SOVERSION "${LIBCLAMAV_CURRENT} - ${LIBCLAMAV_AGE}")
 set(LIBCLAMAV_VERSION "${LIBCLAMAV_SOVERSION}.${LIBCLAMAV_AGE}.${LIBCLAMAV_REVISION}")

@@ -1,7 +1,7 @@
 /*
  *  Assorted utility functions and macros.
  *
- *  Copyright (C) 2021-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+ *  Copyright (C) 2021-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
  *
  *  Authors: Scott Hutton
  *
@@ -26,6 +26,10 @@ use glob::glob;
 use log::{debug, error, warn};
 
 use crate::{ffi_error, ffi_util::FFIError, sys, validate_str_param};
+
+extern "C" {
+    fn cli_checktimelimit(ctx: *mut sys::cli_ctx) -> sys::cl_error_t;
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -95,12 +99,50 @@ pub unsafe fn check_scan_limits(
     let module_name = match std::ffi::CString::new(module_name) {
         Ok(name) => name,
         Err(_) => {
-            error!("Invalid module_name: {}", module_name);
+            error!("Invalid module_name: {:?}", module_name);
             return sys::cl_error_t_CL_EFORMAT;
         }
     };
 
     unsafe { sys::cli_checklimits(module_name.as_ptr(), ctx, need1, need2, need3) }
+}
+
+/// Check only the scan time limit in case we need to abort the scan.
+///
+/// # Safety
+///
+/// ctx must be a valid pointer to a clamav scan context structure
+///
+pub unsafe fn check_scan_time_limit(ctx: *mut sys::cli_ctx) -> sys::cl_error_t {
+    unsafe { cli_checktimelimit(ctx) }
+}
+
+pub const HEURISTICS_LIMITS_EXCEEDED_MAX_SCAN_SIZE: &[u8] =
+    b"Heuristics.Limits.Exceeded.MaxScanSize\0";
+pub const HEURISTICS_LIMITS_EXCEEDED_MAX_FILES: &[u8] = b"Heuristics.Limits.Exceeded.MaxFiles\0";
+
+/// Append an exceeds-max heuristic alert or metadata entry.
+///
+/// The C evidence store retains the original `virname` pointer, so the alert
+/// name must have static lifetime rather than temporary Rust string storage.
+///
+/// # Safety
+///
+/// ctx must be a valid pointer to a clamav scan context structure.
+/// virname must point to a static NUL-terminated C string.
+///
+pub unsafe fn append_potentially_unwanted_if_heur_exceedsmax(
+    ctx: *mut sys::cli_ctx,
+    virname: &'static [u8],
+) {
+    debug_assert_eq!(virname.last(), Some(&0));
+
+    unsafe {
+        sys::cli_append_potentially_unwanted_if_heur_exceedsmax(
+            ctx,
+            virname.as_ptr().cast_mut().cast(),
+        );
+    }
 }
 
 /// Scan archive metadata.
@@ -121,7 +163,7 @@ pub unsafe fn scan_archive_metadata(
     let module_name = match std::ffi::CString::new(filename) {
         Ok(name) => name,
         Err(_) => {
-            error!("Invalid module_name: {}", filename);
+            debug!("Invalid archive metadata filename: {:?}", filename);
             return sys::cl_error_t_CL_EFORMAT;
         }
     };
@@ -146,7 +188,7 @@ pub unsafe fn scan_archive_metadata(
 /// No parameters may be NULL.
 #[export_name = "glob_rm"]
 pub unsafe extern "C" fn glob_rm(glob_str: *const c_char, err: *mut *mut FFIError) -> bool {
-    let glob_str = validate_str_param!(glob_str);
+    let glob_str = validate_str_param!(glob_str, err = err);
 
     for entry in glob(glob_str).expect("Failed to read glob pattern") {
         match entry {
@@ -161,6 +203,23 @@ pub unsafe extern "C" fn glob_rm(glob_str: *const c_char, err: *mut *mut FFIErro
                 return ffi_error!(err = err, Error::GlobError(e));
             }
         }
+    }
+
+    true
+}
+
+/// C interface to create a directory
+///
+/// # Safety
+///
+/// No parameters may be NULL.
+#[export_name = "mkdir_w32"]
+pub unsafe extern "C" fn mkdir_w32(path: *const c_char, err: *mut *mut FFIError) -> bool {
+    let path = validate_str_param!(path, err = err);
+
+    if let Err(e) = std::fs::create_dir_all(&path) {
+        warn!("Failed to create directory: {path:?}");
+        return ffi_error!(err = err, Error::IoError(e));
     }
 
     true

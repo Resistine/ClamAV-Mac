@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2013-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+ *  Copyright (C) 2013-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
  *  Copyright (C) 2007-2013 Sourcefire, Inc.
  *  Copyright (C) 2002-2007 Tomasz Kojm <tkojm@clamav.net>
  *
@@ -243,10 +243,10 @@ static int hashpe(const char *filename, unsigned int class, cli_hash_type_t type
     /* Send to PE-specific hasher */
     switch (class) {
         case 1:
-            ret = cli_genhash_pe(&ctx, CL_GENHASH_PE_CLASS_SECTION, type, NULL);
+            ret = cli_genhash_pe(&ctx, CL_GENHASH_PE_CLASS_SECTION, type);
             break;
         case 2:
-            ret = cli_genhash_pe(&ctx, CL_GENHASH_PE_CLASS_IMPTBL, type, NULL);
+            ret = cli_genhash_pe(&ctx, CL_GENHASH_PE_CLASS_IMPTBL, type);
             break;
         default:
             mprintf(LOGG_ERROR, "hashpe: unknown classification(%u) for pe hash!\n", class);
@@ -3734,7 +3734,7 @@ static int testsigs(const struct optstruct *opts)
 
     fd = open(opts->filename[0], O_RDONLY | O_BINARY);
     if (fd == -1) {
-        mprintf(LOGG_ERROR, "testsigs: Can't open file %s\n", optget(opts, "test-sigs")->strarg);
+        mprintf(LOGG_ERROR, "testsigs: Can't open file %s\n", opts->filename[0]);
         fclose(sigs);
         return -1;
     }
@@ -4038,7 +4038,7 @@ static void help(void)
     mprintf(LOGG_INFO, "\n");
     mprintf(LOGG_INFO, "                      Clam AntiVirus: Signature Tool %s\n", get_version());
     mprintf(LOGG_INFO, "           By The ClamAV Team: https://www.clamav.net/about.html#credits\n");
-    mprintf(LOGG_INFO, "           (C) 2025 Cisco Systems, Inc.\n");
+    mprintf(LOGG_INFO, "           (C) 2026 Cisco Systems, Inc.\n");
     mprintf(LOGG_INFO, "\n");
     mprintf(LOGG_INFO, "    sigtool [options]\n");
     mprintf(LOGG_INFO, "\n");

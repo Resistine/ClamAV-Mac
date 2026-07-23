@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2013-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+ *  Copyright (C) 2013-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
  *  Copyright (C) 2007-2013 Sourcefire, Inc.
  *
  *  Authors: Alberto Wu
@@ -49,6 +49,15 @@
 #define EC16(x) le16_to_host(x) /* Convert little endian to host */
 #define PEALIGN(o, a) (((a)) ? (((o) / (a)) * (a)) : (o))
 #define PESALIGN(o, a) (((a)) ? (((o) / (a) + ((o) % (a) != 0)) * (a)) : (o))
+
+static uint64_t pesalign_u64(uint64_t offset, uint32_t alignment)
+{
+    if (!alignment) {
+        return offset;
+    }
+
+    return ((offset / alignment) + ((offset % alignment) != 0)) * alignment;
+}
 
 struct IMAGE_PE_HEADER {
     uint32_t Signature;
@@ -127,6 +136,8 @@ int cli_rebuildpe(char *buffer, struct cli_exe_section *sections, int sects, uin
 int cli_rebuildpe_align(char *buffer, struct cli_exe_section *sections, int sects, uint32_t base, uint32_t ep, uint32_t ResRva, uint32_t ResSize, int file, uint32_t align)
 {
     uint32_t datasize = 0, rawbase = PESALIGN(0x148 + 0x80 + 0x28 * sects, 0x200);
+    uint64_t packed_datasize = 0;
+    uint64_t total_allocation;
     char *pefile = NULL, *curpe;
     struct IMAGE_PE_HEADER *fakepe;
     int i, gotghost = (sections[0].rva > PESALIGN(rawbase, 0x1000));
@@ -136,17 +147,24 @@ int cli_rebuildpe_align(char *buffer, struct cli_exe_section *sections, int sect
     if (sects + gotghost > 96)
         return 0;
 
-    if (!align)
-        for (i = 0; i < sects; i++)
-            datasize += PESALIGN(sections[i].rsz, 0x200);
-    else
-        for (i = 0; i < sects; i++)
-            datasize += PESALIGN(PESALIGN(sections[i].rsz, align), 0x200);
+    if (!align) {
+        for (i = 0; i < sects; i++) {
+            packed_datasize += pesalign_u64(sections[i].rsz, 0x200);
+        }
+    } else {
+        for (i = 0; i < sects; i++) {
+            packed_datasize += pesalign_u64(pesalign_u64(sections[i].rsz, align), 0x200);
+        }
+    }
 
-    if (datasize > CLI_MAX_ALLOCATION)
+    if (packed_datasize > CLI_MAX_ALLOCATION)
         return 0;
 
-    pefile = (char *)cli_max_calloc(rawbase + datasize, 1);
+    total_allocation = rawbase + packed_datasize;
+    if (total_allocation > CLI_MAX_ALLOCATION)
+        return 0;
+
+    pefile = (char *)cli_max_calloc((size_t)total_allocation, 1);
     if (!pefile)
         return 0;
 

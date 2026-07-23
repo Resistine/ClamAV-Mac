@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2013-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+ *  Copyright (C) 2013-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
  *  Copyright (C) 2007-2013 Sourcefire, Inc.
  *
  *  Authors: Tomasz Kojm
@@ -201,36 +201,6 @@ typedef struct cli_ctx_tag {
     bool abort_scan;     /* So we can guarantee a scan is aborted, even if CL_ETIMEOUT/etc. status is lost in the scan recursion stack. */
 } cli_ctx;
 
-#define STATS_ANON_UUID "5b585e8f-3be5-11e3-bf0b-18037319526c"
-#define STATS_MAX_SAMPLES 50
-#define STATS_MAX_MEM 1024 * 1024
-
-typedef struct cli_flagged_sample {
-    char **virus_name;
-    char md5[MD5_HASH_SIZE];
-    uint32_t size; /* A size of zero means size is unavailable (why would this ever happen?) */
-    uint32_t hits;
-    stats_section_t *sections;
-
-    struct cli_flagged_sample *prev;
-    struct cli_flagged_sample *next;
-} cli_flagged_sample_t;
-
-typedef struct cli_clamav_intel {
-    char *hostid;
-    char *host_info;
-    cli_flagged_sample_t *samples;
-    uint32_t nsamples;
-    uint32_t maxsamples;
-    uint32_t maxmem;
-    uint32_t timeout;
-    time_t nextupdate;
-    struct cl_engine *engine;
-#ifdef CL_THREAD_SAFE
-    pthread_mutex_t mutex;
-#endif
-} cli_intel_t;
-
 typedef struct {
     uint64_t v[2][4];
 } icon_groupset;
@@ -340,8 +310,8 @@ struct cl_engine {
     struct cli_cdb *cdb;
 
     /* Phishing .pdb and .wdb databases*/
-    struct regex_matcher *allow_list_matcher;
-    struct regex_matcher *domain_list_matcher;
+    struct regex_matcher *phish_allow_list_matcher;
+    struct regex_matcher *phish_protected_domain_matcher;
     struct phishcheck *phishcheck;
 
     /* Dynamic configuration */
@@ -423,17 +393,6 @@ struct cl_engine {
     uint64_t maxscriptnormalize; /* max size to normalize scripts */
     uint64_t maxziptypercg;      /* max size to re-do zip filetype */
 
-    /* Statistics/intelligence gathering */
-    void *stats_data;
-    clcb_stats_add_sample cb_stats_add_sample;
-    clcb_stats_remove_sample cb_stats_remove_sample;
-    clcb_stats_decrement_count cb_stats_decrement_count;
-    clcb_stats_submit cb_stats_submit;
-    clcb_stats_flush cb_stats_flush;
-    clcb_stats_get_num cb_stats_get_num;
-    clcb_stats_get_size cb_stats_get_size;
-    clcb_stats_get_hostid cb_stats_get_hostid;
-
     /* Raw disk image max settings */
     uint32_t maxpartitions; /* max number of partitions to scan in a disk image */
 
@@ -501,17 +460,6 @@ struct cl_settings {
     uint64_t maxscriptnormalize; /* max size to normalize scripts */
     uint64_t maxziptypercg;      /* max size to re-do zip filetype */
 
-    /* Statistics/intelligence gathering */
-    void *stats_data;
-    clcb_stats_add_sample cb_stats_add_sample;
-    clcb_stats_remove_sample cb_stats_remove_sample;
-    clcb_stats_decrement_count cb_stats_decrement_count;
-    clcb_stats_submit cb_stats_submit;
-    clcb_stats_flush cb_stats_flush;
-    clcb_stats_get_num cb_stats_get_num;
-    clcb_stats_get_size cb_stats_get_size;
-    clcb_stats_get_hostid cb_stats_get_hostid;
-
     /* Raw disk image max settings */
     uint32_t maxpartitions; /* max number of partitions to scan in a disk image */
 
@@ -575,16 +523,16 @@ extern LIBCLAMAV_EXPORT int have_rar;
 
 /* based on macros from A. Melnikoff */
 #define cbswap16(v) (((v & 0xff) << 8) | (((v) >> 8) & 0xff))
-#define cbswap32(v) ((((v) & 0x000000ff) << 24) | (((v) & 0x0000ff00) << 8) | \
-                     (((v) & 0x00ff0000) >> 8) | (((v) & 0xff000000) >> 24))
-#define cbswap64(v) ((((v) & 0x00000000000000ffULL) << 56) | \
-                     (((v) & 0x000000000000ff00ULL) << 40) | \
-                     (((v) & 0x0000000000ff0000ULL) << 24) | \
-                     (((v) & 0x00000000ff000000ULL) << 8) |  \
-                     (((v) & 0x000000ff00000000ULL) >> 8) |  \
-                     (((v) & 0x0000ff0000000000ULL) >> 24) | \
-                     (((v) & 0x00ff000000000000ULL) >> 40) | \
-                     (((v) & 0xff00000000000000ULL) >> 56))
+#define cbswap32(v) ((((v)&0x000000ff) << 24) | (((v)&0x0000ff00) << 8) | \
+                     (((v)&0x00ff0000) >> 8) | (((v)&0xff000000) >> 24))
+#define cbswap64(v) ((((v)&0x00000000000000ffULL) << 56) | \
+                     (((v)&0x000000000000ff00ULL) << 40) | \
+                     (((v)&0x0000000000ff0000ULL) << 24) | \
+                     (((v)&0x00000000ff000000ULL) << 8) |  \
+                     (((v)&0x000000ff00000000ULL) >> 8) |  \
+                     (((v)&0x0000ff0000000000ULL) >> 24) | \
+                     (((v)&0x00ff000000000000ULL) >> 40) | \
+                     (((v)&0xff00000000000000ULL) >> 56))
 
 #ifndef HAVE_ATTRIB_PACKED
 #define __attribute__(x)
@@ -833,8 +781,8 @@ cl_error_t cli_dispatch_scan_callback(cli_ctx *ctx, cl_scan_callback_t location)
 /* used by: spin, yc (C) aCaB */
 #define __SHIFTBITS(a) (sizeof(a) << 3)
 #define __SHIFTMASK(a) (__SHIFTBITS(a) - 1)
-#define CLI_ROL(a, b) a = (a << ((b) & __SHIFTMASK(a))) | (a >> ((__SHIFTBITS(a) - (b)) & __SHIFTMASK(a)))
-#define CLI_ROR(a, b) a = (a >> ((b) & __SHIFTMASK(a))) | (a << ((__SHIFTBITS(a) - (b)) & __SHIFTMASK(a)))
+#define CLI_ROL(a, b) a = (a << ((b)&__SHIFTMASK(a))) | (a >> ((__SHIFTBITS(a) - (b)) & __SHIFTMASK(a)))
+#define CLI_ROR(a, b) a = (a >> ((b)&__SHIFTMASK(a))) | (a << ((__SHIFTBITS(a) - (b)) & __SHIFTMASK(a)))
 
 /* Implementation independent sign-extended signed right shift */
 #ifdef HAVE_SAR

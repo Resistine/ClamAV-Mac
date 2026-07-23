@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2013-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+ *  Copyright (C) 2013-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
  *  Copyright (C) 2007-2013 Sourcefire, Inc.
  *
  *  Authors: Tomasz Kojm
@@ -429,8 +429,6 @@ cl_error_t cl_cvdverify_ex(const char *file, const char *certs_directory, uint32
         ret = CL_EMEM;
         goto done;
     }
-    engine->cb_stats_submit = NULL; /* Don't submit stats if we're just verifying a CVD */
-
     if (!!cli_strbcasestr(file, ".cvd")) {
         dbtype = CVD_TYPE_CVD;
     } else if (!!cli_strbcasestr(file, ".cld")) {

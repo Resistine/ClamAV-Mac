@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2013-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+ *  Copyright (C) 2013-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
  *  Copyright (C) 2007-2013 Sourcefire, Inc.
  *
  *  Authors: Tomasz Kojm, Trog, Török Edvin
@@ -34,6 +34,8 @@
 
 #include "thrmgr.h"
 #include "session.h"
+
+int need_db_reload(void);
 
 struct thrarg {
     int sid;

@@ -1,7 +1,7 @@
 /*
  *  Extract XLM (Excel 4.0) macro source code for component MS Office Documents
  *
- *  Copyright (C) 2020-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+ *  Copyright (C) 2020-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
  *
  *  Authors: Jonas Zaddach
  *
@@ -29,6 +29,7 @@
 
 #include <fcntl.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "fmap.h"
 #include "entconv.h"
@@ -4044,7 +4045,9 @@ static cl_error_t parse_formula(FILE *out_file, char data[], unsigned data_size)
                     goto done;
                 }
 
-                double val = *(double *)&data[data_pos + 1];
+                double val;
+                /* Avoid unaligned double loads (may SIGBUS on 32-bit ARM). */
+                memcpy(&val, &data[data_pos + 1], sizeof(val));
 
                 len = fprintf(out_file, " %f", val);
                 if (len < 0) {
@@ -4789,6 +4792,11 @@ cl_error_t cli_extract_xlm_macros_and_images(const char *dir, cli_ctx *ctx, char
 
                 } else {
                     /* already found the beginning of a drawing group, extract the remaining chunks */
+                    if (drawinggroup_len > SIZE_MAX - biff_header.length) {
+                        cli_dbgmsg("[cli_extract_xlm_macros_and_images] Drawing group length overflow\n");
+                        status = CL_EFORMAT;
+                        goto done;
+                    }
                     drawinggroup_len += biff_header.length;
                     CLI_MAX_REALLOC_OR_GOTO_DONE(drawinggroup, drawinggroup_len, status = CL_EMEM);
                     memcpy(drawinggroup + (drawinggroup_len - biff_header.length), data, biff_header.length);
@@ -4800,6 +4808,11 @@ cl_error_t cli_extract_xlm_macros_and_images(const char *dir, cli_ctx *ctx, char
                 if ((OPC_MSODRAWINGGROUP == previous_biff8_opcode) &&
                     (NULL != drawinggroup)) {
                     /* already found the beginning of an image, extract the remaining chunks */
+                    if (drawinggroup_len > SIZE_MAX - biff_header.length) {
+                        cli_dbgmsg("[cli_extract_xlm_macros_and_images] Drawing group length overflow\n");
+                        status = CL_EFORMAT;
+                        goto done;
+                    }
                     drawinggroup_len += biff_header.length;
                     CLI_MAX_REALLOC_OR_GOTO_DONE(drawinggroup, drawinggroup_len, status = CL_EMEM);
                     memcpy(drawinggroup + (drawinggroup_len - biff_header.length), data, biff_header.length);
@@ -4873,8 +4886,16 @@ cl_error_t cli_extract_xlm_macros_and_images(const char *dir, cli_ctx *ctx, char
                     }
 
                     if (!(flags & 0x1)) {
-                        // String is compressed
-                        len = fprintf(out_file, " - \"%.*s\"", (int)(biff_header.length - 3), &data[6]);
+                        // String is compressed (one byte per character). The character data
+                        // begins at offset 3, after the 2-byte character count and the flags
+                        // byte, the same offset the UTF-16 branch below reads from. Clamp the
+                        // printed length to the bytes actually present in the record so a
+                        // malformed character count cannot read past the record buffer.
+                        if (string_length > biff_header.length - 3) {
+                            string_length = biff_header.length - 3;
+                        }
+
+                        len = fprintf(out_file, " - \"%.*s\"", (int)string_length, &data[3]);
                         if (len < 0) {
                             cli_dbgmsg("[cli_extract_xlm_macros_and_images] Error formatting STRING record message with ANSI content\n");
 

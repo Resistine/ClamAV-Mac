@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2013-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+ *  Copyright (C) 2013-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
  *  Copyright (C) 2007-2013 Sourcefire, Inc.
  *
  *  Authors: Tomasz Kojm, Trog, Török Edvin
@@ -137,6 +137,8 @@ static void scanner_thread(void *arg)
 
     if (conn->filename)
         free(conn->filename);
+    if (conn->display_filename)
+        free(conn->display_filename);
     logg(LOGG_DEBUG_NV, "Finished scanthread\n");
     enum thrmgr_exit exit_code;
     if (virus != 0) {
@@ -192,7 +194,7 @@ void sighandler_th(int sig)
             logg(LOGG_DEBUG_NV, "Failed to write to syncpipe\n");
 }
 
-static int need_db_reload(void)
+int need_db_reload(void)
 {
     if (!dbstat.entries) {
         logg(LOGG_INFO, "No stats for Database check - forcing reload\n");

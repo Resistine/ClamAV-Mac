@@ -1,4 +1,4 @@
-# Copyright (C) 2020-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+# Copyright (C) 2020-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
 
 if(WIN32)
     add_definitions(-DWIN32_LEAN_AND_MEAN)
@@ -18,7 +18,6 @@ target_sources( common
         actions.c
         clamdcom.c
         getopt.c
-        hostid.c
         idmef_logging.c
         misc.c
         optparser.c
@@ -30,7 +29,6 @@ target_sources( common
         clamdcom.h
         fdpassing.h
         getopt.h
-        hostid.h
         idmef_logging.h
         misc.h
         optparser.h

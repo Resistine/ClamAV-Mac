@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2013-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+ *  Copyright (C) 2013-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
  *  Copyright (C) 2007-2013 Sourcefire, Inc.
  *
  *  Authors: Tomasz Kojm, Török Edvin
@@ -49,6 +49,8 @@
 #define CMD23 "GET / HTTP/2"
 #define CMD24 ""
 
+#define CMD25 "SELFCHECK"
+
 // libclamav
 #include "clamav.h"
 
@@ -62,6 +64,7 @@ enum commands {
     COMMAND_UNKNOWN  = 0,
     COMMAND_SHUTDOWN = 1,
     COMMAND_RELOAD,
+    COMMAND_SELFCHECK,
     COMMAND_END,
     COMMAND_SCAN,
     COMMAND_PING,
@@ -88,6 +91,7 @@ enum commands {
 typedef struct client_conn_tag {
     enum commands cmdtype;
     char *filename;
+    char *display_filename;
     int scanfd;
     int sd;
     struct cl_scan_options *options;

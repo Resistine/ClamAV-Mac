@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2014-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+ *  Copyright (C) 2014-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
  *
  *  Authors: Kevin Lin <klin@sourcefire.com>
  *
@@ -303,7 +303,7 @@ static cl_error_t gpt_scan_partitions(cli_ctx *ctx, struct gpt_header hdr, size_
         gpe.lastLBA    = le64_to_host(gpe.lastLBA);
         gpe.attributes = le64_to_host(gpe.attributes);
         for (j = 0; j < 36; ++j) {
-            gpe.name[i] = le16_to_host(gpe.name[i]);
+            gpe.name[j] = le16_to_host(gpe.name[j]);
         }
 
         /* check that partition is not empty and within a valid location */

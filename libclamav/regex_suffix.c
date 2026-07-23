@@ -1,7 +1,7 @@
 /*
  *  Parse a regular expression, and extract a static suffix.
  *
- *  Copyright (C) 2013-2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
+ *  Copyright (C) 2013-2026 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
  *  Copyright (C) 2007-2013 Sourcefire, Inc.
  *
  *  Authors: Török Edvin
@@ -394,9 +394,7 @@ static cl_error_t build_suffixtree_ascend(struct node *n, struct text_buffer *bu
                         cnt++;
                 if (cnt > 16) {
                     textbuffer_putc(buf, '\0');
-                    if (cb(cbdata, buf->data, buf->pos - 1, regex) != CL_SUCCESS)
-                        return CL_EMEM;
-                    return CL_SUCCESS;
+                    return cb(cbdata, buf->data, buf->pos - 1, regex);
                 }
                 /* handle small classes by expanding */
                 for (i = 0; i < 255; i++) {
@@ -412,11 +410,9 @@ static cl_error_t build_suffixtree_ascend(struct node *n, struct text_buffer *bu
                 return 0;
             case concat:
                 if (prev != n->u.children.left) {
-                    if (build_suffixtree_descend(n->u.children.left, buf, cb, cbdata, regex) != CL_SUCCESS)
-                        return CL_EMEM;
+                    return build_suffixtree_descend(n->u.children.left, buf, cb, cbdata, regex);
                     /* we're done here, descend will call
                      * ascend if needed */
-                    return CL_SUCCESS;
                 } else {
                     n = n->parent;
                 }
@@ -438,6 +434,7 @@ static cl_error_t build_suffixtree_ascend(struct node *n, struct text_buffer *bu
 static cl_error_t build_suffixtree_descend(struct node *n, struct text_buffer *buf, suffix_callback cb, void *cbdata, struct regex_list *regex)
 {
     size_t pos;
+    cl_error_t ret = CL_SUCCESS;
     while (n && n->type == concat) {
         n = n->u.children.right;
     }
@@ -449,23 +446,23 @@ static cl_error_t build_suffixtree_descend(struct node *n, struct text_buffer *b
         case alternate:
             /* save pos as restart point */
             pos = buf->pos;
-            if (build_suffixtree_descend(n->u.children.left, buf, cb, cbdata, regex) != CL_SUCCESS)
-                return CL_EMEM;
+            if ((ret = build_suffixtree_descend(n->u.children.left, buf, cb, cbdata, regex)) != CL_SUCCESS) {
+                return ret;
+            }
             buf->pos = pos;
-            if (build_suffixtree_descend(n->u.children.right, buf, cb, cbdata, regex) != CL_SUCCESS)
-                return CL_EMEM;
+            if ((ret = build_suffixtree_descend(n->u.children.right, buf, cb, cbdata, regex)) != CL_SUCCESS) {
+                return ret;
+            }
             buf->pos = pos;
             break;
         case optional:
             textbuffer_putc(buf, '\0');
-            if (cb(cbdata, buf->data, buf->pos - 1, regex) != CL_SUCCESS)
-                return CL_EMEM;
-            return CL_SUCCESS;
+            if ((ret = cb(cbdata, buf->data, buf->pos - 1, regex)) != CL_SUCCESS) {
+                return ret;
+            }
         case leaf:
         case leaf_class:
-            if (build_suffixtree_ascend(n, buf, NULL, cb, cbdata, regex) != CL_SUCCESS)
-                return CL_EMEM;
-            return CL_SUCCESS;
+            return build_suffixtree_ascend(n, buf, NULL, cb, cbdata, regex);
         default:
             break;
     }
@@ -480,11 +477,11 @@ cl_error_t cli_regex2suffix(const char *pattern, regex_t *preg, suffix_callback 
     struct node *n          = NULL;
     size_t last             = 0;
     int rc;
+    cl_error_t ret = CL_SUCCESS;
 
     if (NULL == pattern) {
         cli_errmsg("cli_regex2suffix: pattern can't be NULL\n");
-        rc = REG_INVARG;
-        goto done;
+        return CL_ENULLARG;
     }
 
     regex.preg = preg;
@@ -499,27 +496,49 @@ cl_error_t cli_regex2suffix(const char *pattern, regex_t *preg, suffix_callback 
         } else {
             cli_errmsg(MODULE "Error compiling regular expression: %s\n", pattern);
         }
-        return rc;
+        switch (rc) {
+            case REG_BADBR:
+            case REG_BADPAT:
+            case REG_BADRPT:
+            case REG_EBRACE:
+            case REG_EBRACK:
+            case REG_ECOLLATE:
+            case REG_ECTYPE:
+            case REG_EPAREN:
+            case REG_ERANGE:
+            case REG_ESUBREG:
+            case REG_INVARG:
+                ret = CL_EPARSE;
+                break;
+            case REG_ESPACE:
+                ret = CL_EMEM;
+                break;
+            default:
+                ret = CL_ERROR;
+                break;
+        }
+        return ret;
     }
+
     regex.nxt = NULL;
     CLI_SAFER_STRDUP_OR_GOTO_DONE(pattern, regex.pattern,
                                   cli_errmsg("cli_regex2suffix: unable to strdup regex.pattern\n");
-                                  rc = REG_ESPACE);
+                                  ret = CL_EMEM);
 
     n = parse_regex((const uint8_t *)pattern, strlen(pattern), &last);
     if (!n) {
-        rc = REG_ESPACE;
+        ret = CL_EMEM;
         goto done;
     }
     memset(&buf, 0, sizeof(buf));
     memset(&root_node, 0, sizeof(root_node));
     n->parent = &root_node;
 
-    rc = build_suffixtree_descend(n, &buf, cb, cbdata, &regex);
+    ret = build_suffixtree_descend(n, &buf, cb, cbdata, &regex);
 
 done:
     CLI_FREE_AND_SET_NULL(regex.pattern);
     CLI_FREE_AND_SET_NULL(buf.data);
     destroy_tree(n);
-    return rc;
+    return ret;
 }
